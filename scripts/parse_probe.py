@@ -1,7 +1,8 @@
 """Distill Phase 0 probe output (pulled from Explorer) into manifests/h200.json plus scrubbed raw files.
 
 Usage:
-    python scripts/parse_probe.py results/explorer/probe/h200-<job> [...] [--cpu results/explorer/probe/cpu-<job>]
+    python scripts/parse_probe.py results/explorer/probe/h200-<job> [...] \
+        [--cpu results/explorer/probe/cpu-<job>] [--scrub USERNAME]
 
 Raw probe dirs stay out of git (results/explorer/ is ignored). This keeps only small, scrubbed text:
 the Explorer username, GPU UUIDs and serial numbers are removed before anything is written.
@@ -227,7 +228,9 @@ def main() -> int:
     probes = [parse_h200(d) for d in args.h200]
     names = {g.get("name") for p in probes for g in p["gpus"]}
     drivers = {g.get("driver_version") for p in probes for g in p["gpus"]}
-    pair = next((p["topology"].get("gpu0_gpu1_link") for p in probes if "gpu0_gpu1_link" in p["topology"]), None)
+    pair = next(
+        (p["topology"].get("gpu0_gpu1_link") for p in probes if "gpu0_gpu1_link" in p["topology"]), None
+    )
     gemm = [d["gemm_bf16_8192_tflops"] for p in probes for d in p["torch_probe"].get("devices", [])]
     hbm = [d["d2d_copy_gbps"] for p in probes for d in p["torch_probe"].get("devices", [])]
     p2p = [p["torch_probe"]["p2p"] for p in probes if "p2p" in p["torch_probe"]]
