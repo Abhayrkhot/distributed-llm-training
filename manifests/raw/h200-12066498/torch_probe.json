@@ -1,0 +1,19 @@
+{
+  "torch": "2.11.0+cu128",
+  "cuda_runtime": "12.8",
+  "cudnn": 91900,
+  "nccl": "2.28.9",
+  "device_count": 1,
+  "devices": [
+    {
+      "index": 0,
+      "name": "NVIDIA H200",
+      "capability": "9.0",
+      "sm_count": 132,
+      "total_bytes": 150121545728,
+      "free_bytes_at_start": 149570977792,
+      "gemm_bf16_8192_tflops": 701.8,
+      "d2d_copy_gbps": 4292.7
+    }
+  ]
+}

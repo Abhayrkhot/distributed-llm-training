@@ -1,0 +1,3 @@
+try=1 http=206 bytes=536870912 secs=4.711038 bytes_per_s=113960216
+try=2 http=206 bytes=536870912 secs=2.950158 bytes_per_s=181980392
+try=3 http=206 bytes=536870912 secs=2.783012 bytes_per_s=192910024

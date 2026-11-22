@@ -1,0 +1,10 @@
+== module cuda/12.8.0
+/shared/EL9/explorer/cuda/12.8.0/bin/nsys
+/shared/EL9/explorer/cuda/12.8.0/bin/ncu
+NVIDIA Nsight Systems version 2024.6.2.225-246235244400v0
+Version 2025.1.0.0 (build 35237751) (public-release)
+== module Nsight/2024.7.1
+/usr/bin/which: no ncu in (/shared/EL9/explorer/Nsight/2024.7.1/bin:/shared/EL9/explorer/anaconda3/2024.06/bin:/shared/EL9/explorer/anaconda3/2024.06/condabin:/shared/EL9/explorer/explorer/bin:/usr/share/Modules/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/home/$USER/.local/bin:/home/$USER/bin)
+/shared/EL9/explorer/Nsight/2024.7.1/bin/nsys
+NVIDIA Nsight Systems version 2024.7.1.84-247135125610v0
+/var/spool/slurmd/job12066488/slurm_script: line 46: ncu: command not found

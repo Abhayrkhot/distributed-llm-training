@@ -1,0 +1,11 @@
+date=2026-11-22T14:54:23-05:00
+host=d4052
+job=12066488 partition=gpu-short
+cuda_visible_devices=0,1
+git_sha=d29692e
+kernel=5.14.0-362.13.1.el9_3.x86_64
+os=Rocky Linux 9.3 (Blue Onyx)
+probe_exit=0
+nsys_exit=0 report=nsys_test.nsys-rep
+ncu_exit=1 perm_error=1
+done 2026-11-22T14:55:02-05:00

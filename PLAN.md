@@ -54,7 +54,7 @@ From `sacctmgr`, `scontrol`, `sinfo` and the RC docs:
 - **Storage and network:** /scratch is NFS (a file can take ~30 s to appear on other nodes). Compute nodes set `http_proxy`. Login nodes are often overloaded: one SSH connection per step, tar over ssh, poll at 90 s or more.
 - **Queueing:** requesting `--gres=gpu:h200:N` specifically can mean longer waits. Node RAM, not GPUs, was the limiting request in past H200 jobs, so set `--mem` explicitly.
 
-**Still unknown (Phase 0):** the exact H200 variant (SXM or NVL, which sets peak FLOPS and topology), which GPU pairs share NVLink (`nvidia-smi topo -m`), driver and CUDA versions on the H200 nodes, scratch quota, and whether Nsight Systems/Compute work without RC help.
+**Resolved in Phase 0** ([docs/phase0.md](docs/phase0.md)): the nodes are H200 SXM (989 TFLOPS dense BF16 peak; 687 TFLOPS measured on an 8192 GEMM), every GPU pair is NV18 through NVSwitch, the driver is 570.86.15 (CUDA 12.8 native), Nsight Systems works in jobs, and Nsight Compute needs RC to unlock counters. The per-user /scratch quota is still unknown because RC's quota tool failed.
 
 ## 4. Feasibility math
 

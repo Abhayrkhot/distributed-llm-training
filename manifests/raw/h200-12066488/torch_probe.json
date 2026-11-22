@@ -1,0 +1,35 @@
+{
+  "torch": "2.11.0+cu128",
+  "cuda_runtime": "12.8",
+  "cudnn": 91900,
+  "nccl": "2.28.9",
+  "device_count": 2,
+  "devices": [
+    {
+      "index": 0,
+      "name": "NVIDIA H200",
+      "capability": "9.0",
+      "sm_count": 132,
+      "total_bytes": 150121545728,
+      "free_bytes_at_start": 149570977792,
+      "gemm_bf16_8192_tflops": 687.2,
+      "d2d_copy_gbps": 4296.0
+    },
+    {
+      "index": 1,
+      "name": "NVIDIA H200",
+      "capability": "9.0",
+      "sm_count": 132,
+      "total_bytes": 150121545728,
+      "free_bytes_at_start": 149570977792,
+      "gemm_bf16_8192_tflops": 680.2,
+      "d2d_copy_gbps": 4283.7
+    }
+  ],
+  "p2p": {
+    "can_access_0_1": true,
+    "can_access_1_0": true,
+    "copy_0_to_1_gbps": 395.1,
+    "copy_1_to_0_gbps": 395.1
+  }
+}

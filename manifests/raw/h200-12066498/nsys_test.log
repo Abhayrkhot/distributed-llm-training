@@ -1,0 +1,27 @@
+Collecting data...
+Generating '/tmp/nsys-report-a099.qdstrm'
+
+[1/1] [0%                          ] nsys_test.nsys-rep
+[1/1] [0%                          ] nsys_test.nsys-rep
+[1/1] [8%                          ] nsys_test.nsys-rep
+[1/1] [========40%                 ] nsys_test.nsys-rep
+[1/1] [===========53%              ] nsys_test.nsys-rep
+[1/1] [===============66%          ] nsys_test.nsys-rep
+[1/1] [===============67%          ] nsys_test.nsys-rep
+[1/1] [================68%         ] nsys_test.nsys-rep
+[1/1] [================69%         ] nsys_test.nsys-rep
+[1/1] [================70%         ] nsys_test.nsys-rep
+[1/1] [================71%         ] nsys_test.nsys-rep
+[1/1] [=================73%        ] nsys_test.nsys-rep
+[1/1] [==================76%       ] nsys_test.nsys-rep
+[1/1] [===================80%      ] nsys_test.nsys-rep
+[1/1] [===================81%      ] nsys_test.nsys-rep
+[1/1] [===================82%      ] nsys_test.nsys-rep
+[1/1] [====================85%     ] nsys_test.nsys-rep
+[1/1] [=====================87%    ] nsys_test.nsys-rep
+[1/1] [=======================94%  ] nsys_test.nsys-rep
+[1/1] [========================99% ] nsys_test.nsys-rep
+[1/1] [========================100%] nsys_test.nsys-rep
+[1/1] [========================100%] nsys_test.nsys-rep
+Generated:
+    /scratch/$USER/dlt/results/probe/h200-12066498/nsys_test.nsys-rep

@@ -1,0 +1,3 @@
+index, name, pci.bus_id, driver_version, memory.total [MiB], power.limit [W], power.max_limit [W], clocks.max.sm [MHz], clocks.max.memory [MHz], compute_cap, persistence_mode
+0, NVIDIA H200, 00000000:4C:00.0, 570.86.15, 143771 MiB, 700.00 W, 700.00 W, 1980 MHz, 3201 MHz, 9.0, Enabled
+1, NVIDIA H200, 00000000:9B:00.0, 570.86.15, 143771 MiB, 700.00 W, 700.00 W, 1980 MHz, 3201 MHz, 9.0, Enabled
