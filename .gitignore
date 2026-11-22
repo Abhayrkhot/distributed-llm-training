@@ -1,0 +1,28 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.venv/
+.DS_Store
+
+# Cluster connection details and secrets never get committed
+.explorer.env
+.env
+*.token
+
+# Large artifacts live on /scratch, referenced by manifests with checksums
+*.sif
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.nsys-rep
+*.ncu-rep
+*.sqlite
+/checkpoints/
+/data/
+/scratch/
+
+# Raw pulls from Explorer; distilled into results/ and manifests/ before committing
+results/explorer/
