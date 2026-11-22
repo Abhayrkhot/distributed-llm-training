@@ -14,7 +14,7 @@ From `sacctmgr show qos`, `scontrol show partition` and the RC docs.
 | `gpu-interactive` | 2 h | 1 | none set | d4052-d4055 |
 | `sharing` | 1 h | 1 | 2 | d4077 |
 | `courses-gpu` | 1 day | 1 | 2 | none |
-| `multigpu` | 24 h | 8 | 8 | approval required |
+| `multigpu` | 24 h | 8 | 8 | approval required; not pursued |
 
 The available accounts have QOS `normal` only, so one job gets at most 2 H200s today. The per-user
 GPU limits are shared with every other job the same user runs (other projects' jobs count).
@@ -122,13 +122,11 @@ results and metrics are published regardless.
   unknown, so absolute scores carry a contamination caveat.
 - **Reported as:** "BIRD dev (1106 split)", as the leaderboard asks.
 
-## 7. `multigpu`
+## 7. Beyond 2 GPUs
 
-Process (RC docs): partition application form, then a temporary reservation to run 1/2/4/8-GPU tests;
-scaling efficiency should be above 0.5 at the maximum GPU count. RC describes the partition as for
-research workflows, so this project may not qualify. A draft question to RC is in
-[rc-multigpu-request.md](rc-multigpu-request.md); it has not been sent. Nothing in Phases 1-8 waits on
-the answer.
+Explorer's `multigpu` partition needs an application and is meant for research workflows, so this
+project does not pursue it. Everything runs on 1-2 H200s; scaling to 4-8 GPUs comes later on rented
+GPUs (PLAN.md Phase 9), with fresh 1-GPU baselines on that hardware.
 
 ## 8. Workflow
 

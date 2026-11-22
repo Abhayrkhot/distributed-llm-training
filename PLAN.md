@@ -4,7 +4,7 @@
 
 **Secondary objective:** a full-parameter DDP vs FSDP2 scaling and memory study on the Qwen2.5 size ladder (0.5B to 14B), with MFU, communication and profiler evidence.
 
-**Hardware:** Northeastern Explorer H200s. 1 GPU per job for up to 8 h, 2 GPUs per job for up to 2 h. 4+ GPUs only if `multigpu` access is granted, which is not assumed.
+**Hardware:** Northeastern Explorer H200s, at most 2 per job: 1 GPU per job for up to 8 h, 2 GPUs per job for up to 2 h. Everything in Phases 1-8 runs on 1-2 GPUs. Scaling to 4-8 GPUs comes later on rented GPUs (Phase 9).
 
 **Schedule:** milestone-based. The binding constraint is GPU-hours and queue time, not coding time.
 
@@ -25,13 +25,13 @@ Every number in the README comes from a results file produced by a run in this r
 
 | Change | Reason |
 |---|---|
-| 1-2 GPUs is the baseline; 4+ is a gated bonus | A job gets at most 2 GPUs (`gpu-short`, 2 h); `gpu` is 1 GPU per job; `multigpu` needs RC approval and is meant for research workflows |
+| Everything runs on 1-2 GPUs; 4-8 GPUs later on rented hardware | A job gets at most 2 GPUs (`gpu-short`, 2 h) and `gpu` is 1 GPU per job. Explorer's `multigpu` partition needs an application and is meant for research workflows, so it is not pursued |
 | Checkpoint/resume moved into the engine phase | Any 2-GPU run longer than 2 h must resume across jobs, so resume is a prerequisite, not a final phase |
 | The 72B fine-tune has a task and a metric | A decreasing training loss is not evidence that the model learned anything useful |
 | MFU and HFU reported with every throughput number | Tokens/sec is not comparable across model sizes or hardware |
 | A100 reproduction phase removed | No code or logs for the 39K/105K/133K tokens/s numbers were found, and a 4-A100 job is not available anyway |
 | DeepSpeed ZeRO-3 cut to one optional matched comparison | Most plumbing for the least new information |
-| Full-parameter 72B reduced to a gated memory experiment | CPU offload cannot fit in available node RAM; only low-bit optimizer states across 4+ GPUs could fit |
+| Full-parameter 72B reduced to a memory experiment in the scale-out phase | CPU offload cannot fit in available node RAM; only low-bit optimizer states across 4+ GPUs could fit |
 | Qwen2.5 size ladder for the small models | Same architecture family as the 72B, so sizes compare cleanly |
 
 ## 3. Cluster facts (checked 2026-11-22)
@@ -45,11 +45,10 @@ From `sacctmgr`, `scontrol`, `sinfo` and the RC docs:
 | `gpu-interactive` | 2 h | 1 | none set | yes |
 | `sharing` | 1 h | 1 | 2 | d4077 only |
 | `courses-gpu` | 1 day | 1 | 2 | no |
-| `multigpu` | 24 h | 8 | 8 | yes, approval required |
+| `multigpu` | 24 h | 8 | 8 | approval required; not pursued |
 
 - **H200 nodes:** d4052-d4055 have 8x H200, 128 cores and 500 GiB RAM each, shared by all users. d4077 (in `sharing`) has 8x H200 and 1.1 TiB RAM.
-- **Accounts:** the available Slurm accounts have QOS `normal` only, so no `multigpu` access today.
-- **`multigpu` access:** partition application form (ServiceNow). RC gives a temporary reservation to run 1/2/4/8-GPU tests; scaling efficiency should be above 0.5 at the maximum GPU count. RC describes the partition as for research workflows, so a personal project may not qualify. Ask before planning around it.
+- **Accounts:** the available Slurm accounts have QOS `normal` only, so one job gets at most 2 GPUs. The per-user GPU limits also count every other job on the account, so 2-GPU jobs start only when both `gpu-short` slots are free.
 - **IdleBot:** emails after 15 min of low GPU utilization and cancels the job after 1 h. Logs via `gpu-logs`. Keep model loads and checkpoint writes well under 15 min, and never hold a GPU for interactive debugging.
 - **Storage and network:** /scratch is NFS (a file can take ~30 s to appear on other nodes). Compute nodes set `http_proxy`. Login nodes are often overloaded: one SSH connection per step, tar over ssh, poll at 90 s or more.
 - **Queueing:** requesting `--gres=gpu:h200:N` specifically can mean longer waits. Node RAM, not GPUs, was the limiting request in past H200 jobs, so set `--mem` explicitly.
@@ -81,7 +80,7 @@ What follows from the table:
 - **BF16 on one GPU:** the BF16 weights alone (135 GiB) leave about 5 GiB on one H200. No BF16 training on one GPU; BF16 inference needs 2.
 - **NF4 on one GPU:** the NF4 base (~38 GiB) leaves about 100 GiB on one H200 for activations, LoRA states and workspace. Single-GPU QLoRA is comfortable, so multi-GPU QLoRA is about throughput, not memory.
 - **LoRA size:** LoRA r=16 on all 7 linear projections per layer is 210.5M trainable parameters (0.29%). Their BF16 gradients are 0.39 GiB per step to all-reduce, negligible next to a multi-second step. **Prediction:** replicated NF4 + DDP beats a sharded NF4 base on 2 GPUs. Phase 7 tests it.
-- **Full-parameter 72B:** CPU offload needs more than 812 GiB of host RAM, and d4052-d4055 have 500 GiB shared by 8 GPUs, so offload is out. The only path is FSDP2 with BF16 parameters and gradients plus 8-bit optimizer states: 6 bytes per param, 406 GiB in total, about 102 GiB per GPU on 4 GPUs before activations (51 GiB on 8). It needs `multigpu` access and stochastic rounding (or similar) for BF16 updates. Gated stretch, Phase 9.
+- **Full-parameter 72B:** CPU offload needs more than 812 GiB of host RAM, and d4052-d4055 have 500 GiB shared by 8 GPUs, so offload is out. The only path is FSDP2 with BF16 parameters and gradients plus 8-bit optimizer states: 6 bytes per param, 406 GiB in total, about 102 GiB per GPU on 4 GPUs before activations (51 GiB on 8). It needs 4+ GPUs and stochastic rounding (or similar) for BF16 updates, so it belongs to the scale-out phase (Phase 9).
 
 ### 4.2 Qwen2.5 size ladder, full-parameter
 
@@ -128,7 +127,7 @@ Track actual usage per phase in the results log and re-plan if a phase runs 2x o
 ## 6. Scope
 
 **In scope**
-- Slurm execution on 1 and 2 H200s, with 4 and 8 only if `multigpu` is granted.
+- Slurm execution on 1 and 2 H200s. Code and configs stay GPU-count agnostic, so the same runs scale to rented 4-8 GPU nodes later.
 - Pinned containers, deterministic configs, structured results, generated README.
 - Full-parameter DDP and FSDP2 on the Qwen2.5 ladder.
 - Qwen2.5-72B NF4 QLoRA on one task, evaluated against the base model.
@@ -136,7 +135,7 @@ Track actual usage per phase in the results log and re-plan if a phase runs 2x o
 - Distributed checkpoint/resume with tested correctness.
 
 **Out of scope**
-- Pretraining or full-parameter training of 72B (beyond the gated memory experiment).
+- Pretraining or full-parameter training of 72B (beyond the Phase 9 memory experiment).
 - Reproducing the old A100 numbers.
 - DeepSpeed as a primary backend.
 - Any throughput target set before measurement.
@@ -146,7 +145,7 @@ Track actual usage per phase in the results log and re-plan if a phase runs 2x o
 
 ### Phase 0: Decisions and resource manifest
 
-Already done: QOS limits, H200 nodes and the `multigpu` process (Section 3).
+Already done: QOS limits and H200 nodes (Section 3).
 
 **Tasks**
 - In a short H200 job that does work and exits, record:
@@ -156,7 +155,6 @@ Already done: QOS limits, H200 nodes and the `multigpu` process (Section 3).
   - Commit it all as `manifests/h200.json`.
 - Check scratch space and file-count quotas. Budget about 250 GB: 72B BF16 (145 GB), NF4 (~41 GB), datasets and checkpoints.
 - Check whether `nsys` runs inside a job and whether `ncu` needs RC to enable counters.
-- Ask RC whether this project qualifies for `multigpu`. Don't block on the answer.
 - Confirm the 72B task (default in Phase 6) and the licenses of the models and dataset.
 
 **Exit:** manifest committed, task chosen, quota known.
@@ -293,15 +291,17 @@ Resume has worked since Phase 2; this phase quantifies it.
 
 **Exit:** resilience table for small-model FSDP2 and for 72B QLoRA.
 
-### Phase 9 (gated): 4+ GPUs
+### Phase 9 (later): scale-out on rented GPUs
 
-Only if RC approves `multigpu`.
+After Phases 1-8 are complete on 2 H200s. Target: one rented node with 4-8 H100s or H200s from a GPU cloud provider; multi-node only if a provider offers it at a sensible price.
 
 **Tasks**
-- **Application evidence:** the Phase 3 2-GPU efficiency numbers. In RC's test reservation, run 1/2/4/8-GPU tests of 7B and 14B FSDP2 and of 72B replicated QLoRA.
-- **If granted:** extend the Phase 3 and Phase 7 tables. Run the full-parameter 72B memory experiment (FSDP2, BF16 parameters and gradients, 8-bit optimizer states, 4 and 8 GPUs) for a few steps to measure memory and step time; it is not a training run.
+- **Portable launch:** run the same modules with torchrun outside Slurm, from the same `uv.lock`; rerun the Phase 0 probe to record the provider, instance type, GPU variant and interconnect.
+- **Fresh baselines:** re-measure 1 GPU on the rented node, so scaling efficiency never mixes Explorer and rented hardware.
+- **Scaling:** rerun Phase 3 (7B and 14B FSDP2) and Phase 7 (72B replicated QLoRA) at 4 and 8 GPUs with the same configs.
+- **Full-parameter 72B memory experiment:** FSDP2 with BF16 parameters and gradients and 8-bit optimizer states on 4 and 8 GPUs, run for a few steps to measure memory and step time; it is not a training run.
 
-**Exit:** either 4/8-GPU results, or a note that access was not granted.
+**Exit:** 4- and 8-GPU rows in the same tables, each labeled with its hardware.
 
 ### Phase 10: Report and release
 
@@ -330,7 +330,7 @@ Only if RC approves `multigpu`.
 - [ ] Fault-tolerance table published.
 - [ ] README generated from results; no number without a run behind it.
 
-**Stretch:** `multigpu` results; the full-parameter 72B memory experiment.
+**Later (Phase 9):** 4- and 8-GPU results on rented GPUs; the full-parameter 72B memory experiment.
 
 ## 9. Measurement rules
 
@@ -359,7 +359,7 @@ Only if RC approves `multigpu`.
 | 72B QLoRA | 1 | 72B | BIRD execution accuracy, loss, MFU, memory |
 | 72B replicated vs sharded | 2 | 72B | memory, step time, comm |
 | Fault injection | 1, 2 | 1.5B, 72B | restore correctness, save/restore time, lost work |
-| Gated scaling | 4, 8 | 7B, 14B, 72B | efficiency, comm |
+| Scale-out (Phase 9, rented GPUs) | 1, 4, 8 | 7B, 14B, 72B | efficiency, comm |
 
 ## 11. Repository layout
 
@@ -395,7 +395,8 @@ Not committed: weights, datasets, Hugging Face tokens, large profiler traces, cl
 
 | Risk | Mitigation |
 |---|---|
-| `multigpu` not granted (likely, since it is research-only) | The plan is complete at 1-2 GPUs; Phase 9 is a bonus |
+| No more than 2 GPUs on Explorer | The plan is complete at 1-2 GPUs; Phase 9 reruns the same configs on rented 4-8 GPU nodes |
+| Other projects on the account hold the per-user GPU slots | Batch each phase's GPU checks into one job; start 2-GPU jobs when both `gpu-short` slots are free |
 | 2 h wall time on 2-GPU jobs | Resume from Phase 2, USR1 save before the wall-time limit, chained jobs |
 | IdleBot cancels jobs during long loads or idle time | Pre-quantized NF4 checkpoint; no idle dev jobs; debug on CPU or 0.5B |
 | H200 queue waits | 1-GPU work on `gpu` (8 h); short jobs; small models where possible |
@@ -425,7 +426,6 @@ The earlier bullet numbers (4x A100 DDP, 39K/105K/133K tokens/s, 85% efficiency)
 - BIRD benchmark: https://bird-bench.github.io/
 - Nsight Systems: https://developer.nvidia.com/nsight-systems
 - Explorer GPU overview: https://rc-docs.northeastern.edu/en/latest/gpus/gpuoverview.html
-- Explorer `multigpu` access: https://rc-docs.northeastern.edu/en/latest/gpus/multigpu-partition-access.html
 - Explorer IdleBot: https://rc-docs.northeastern.edu/en/latest/gpus/idlebot.html
 
 **Guiding principle:** measured engineering quality over parameter count. A tested distributed engine, an honest scaling study and a 72B adapter that measurably beats its base model are a complete project at 1-2 GPUs.
