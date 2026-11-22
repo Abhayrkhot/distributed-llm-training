@@ -8,4 +8,5 @@
 #SBATCH --time=01:00:00
 #SBATCH --signal=B:USR1@300
 #SBATCH --output=/scratch/%u/dlt/logs/%x-%j.out
-source "$SLURM_SUBMIT_DIR/slurm/launch.sh" "$@"
+source "$SLURM_SUBMIT_DIR/slurm/launch.sh"
+dlt_torchrun "$NGPU" "$@"

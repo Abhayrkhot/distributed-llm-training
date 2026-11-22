@@ -34,7 +34,7 @@ and the PLAN.md 4.3 FLOP convention.
 | Path | What |
 |---|---|
 | `src/dlt/` | library: process groups, results records, FLOP counting, benchmarks |
-| `slurm/` | job templates (`h200_1gpu`, `h200_2gpu`), env setup job, chained jobs |
+| `slurm/` | job templates (`h200_1gpu`, `h200_2gpu`), the Phase 1 check job, env setup, chained jobs |
 | `scripts/` | env setup, result import, README generation, probe parsing |
 | `results/` | one JSON record per run (the only source of README numbers) |
 | `manifests/` | hardware manifest and scrubbed raw probe output |
@@ -45,8 +45,9 @@ and the PLAN.md 4.3 FLOP convention.
 ```bash
 # once per lockfile: build the venv on a CPU node
 sbatch slurm/setup_env.sbatch
-# 2-GPU NCCL sweep and smoke training run
-sbatch slurm/h200_2gpu.sbatch dlt.bench.nccl_bw
+# Phase 1 checks: NCCL sweep, 1- and 2-GPU smoke runs, wall-time stop test
+sbatch slurm/phase1_smoke.sbatch
+# general form
 sbatch slurm/h200_2gpu.sbatch dlt.bench.smoke_train --model Qwen/Qwen2.5-0.5B
 ```
 
