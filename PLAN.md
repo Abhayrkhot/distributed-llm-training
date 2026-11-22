@@ -164,12 +164,11 @@ Already done: QOS limits, H200 nodes and the `multigpu` process (Section 3).
 ### Phase 1: Environment, results schema, smoke tests
 
 **Tasks**
-- **Containers:**
-  - Training: one Apptainer image with pinned torch, transformers, peft, bitsandbytes, torchao and accelerate (deepspeed only if the optional Phase 4 comparison runs).
+- **Environment** (changed from an Apptainer image during Phase 1, see [docs/phase1.md](docs/phase1.md)):
+  - Training: a `uv.lock`-pinned venv (torch 2.14.1+cu126, transformers, peft, bitsandbytes, accelerate; torchao and deepspeed added when a phase needs them), built on a CPU node and keyed by the lockfile hash. The lockfile with hashes is the reproducibility artifact; the same lock runs on the dev box, in CI and on Explorer.
   - Eval: a separate vLLM image; reuse the existing vLLM 0.34 image if its versions fit.
-  - Build images on node-local /tmp, not /scratch.
 - **Results schema, before any benchmark:**
-  - One JSON per run: resolved config, git SHA, image digest, node ID, GPU variant, software versions, per-step metrics and summary stats.
+  - One JSON per run: resolved config, git SHA, lockfile hash, node ID, GPU variant, software versions, per-step metrics and summary stats.
   - `scripts/gen_readme.py` builds the README tables from `results/`; CI runs it with `--check`.
 - **Slurm scripts:**
   - `h200_1gpu.sbatch` (`gpu`, 8 h) and `h200_2gpu.sbatch` (`gpu-short`, 2 h), both with `--signal=B:USR1@300` for a checkpoint before the wall-time limit.
