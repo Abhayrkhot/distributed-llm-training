@@ -13,11 +13,33 @@ CI fails if the README drifts from them.
 ## Hardware
 
 <!-- gen:hardware -->
+Probed on d4052 ([manifests/h200.json](manifests/h200.json)).
+
+| Item | Value |
+|---|---|
+| GPU | NVIDIA H200 |
+| Driver | 570.86.15 |
+| GPU-GPU link | NV18 |
+| BF16 GEMM 8192^3 (median TFLOPS) | 687 |
+| Device copy, read + write (median GB/s) | 4,293 |
+| Peer copy GPU0 to GPU1 (GB/s) | 395.1 |
 <!-- /gen:hardware -->
 
 ## NCCL bandwidth
 
 <!-- gen:nccl -->
+2 GPUs on d4052, BF16, torch 2.14.1+cu126, NCCL 2.29.3; median of 5 timed repeats (`nccl_bw-12066735-20261122T214613`).
+
+| Size | all_reduce busbw (GB/s) | all_gather busbw (GB/s) | reduce_scatter busbw (GB/s) |
+|---|---|---|---|
+| 64 KiB | 3.1 | 1.5 | 1.5 |
+| 256 KiB | 12.2 | 5.8 | 3.9 |
+| 1 MiB | 49.5 | 18.9 | 23.4 |
+| 4 MiB | 126.3 | 74.9 | 86.9 |
+| 16 MiB | 225.1 | 153.3 | 163.5 |
+| 64 MiB | 269.2 | 212.4 | 204.2 |
+| 256 MiB | 303.8 | 245.5 | 231.0 |
+| 1 GiB | 328.3 | 271.9 | 266.5 |
 <!-- /gen:nccl -->
 
 ## Smoke runs
@@ -27,6 +49,11 @@ BF16 autocast, AdamW. Step time is the median after warmup; MFU uses the 989 TFL
 and the PLAN.md 4.3 FLOP convention.
 
 <!-- gen:smoke -->
+| Run | Model | GPUs | Seq x micro-batch | Steps | Loss first -> last | Step (s) | Tokens/s | MFU | Peak alloc (GiB/rank) |
+|---|---|---|---|---|---|---|---|---|---|
+| `smoke_train-12066735-20261122T214717` | Qwen2.5-0.5B | 2 | 2048 x 4 | 40 | 12.11 -> 0.96 | 0.1135 | 144,379 | 25.5% | 29.1, 28.2 |
+| `smoke_train-12066735-20261122T214742` | Qwen2.5-0.5B | 1 | 2048 x 4 | 40 | 12.11 -> 1.54 | 0.1074 | 76,263 | 26.9% | 27.3 |
+| `smoke_train-12066735-20261122T215633` | Qwen2.5-0.5B | 2 | 2048 x 4 | 4449 (USR1 at 4449) | 12.11 -> 0.01 | 0.1138 | 143,924 | 25.4% | 29.1, 29.1 |
 <!-- /gen:smoke -->
 
 ## Layout

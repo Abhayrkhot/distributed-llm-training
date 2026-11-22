@@ -110,8 +110,10 @@ SECTIONS = {"hardware": hardware_section, "nccl": nccl_section, "smoke": smoke_s
 
 def render(text: str) -> str:
     for name, fn in SECTIONS.items():
-        pat = re.compile(rf"(<!-- gen:{name} -->\n).*?(\n<!-- /gen:{name} -->)", re.S)
-        text = pat.sub(lambda m, fn=fn: m.group(1) + fn() + m.group(2), text)
+        # The body between the markers may be empty (adjacent marker lines), so it must not need its own
+        # newline before the closing marker.
+        pat = re.compile(rf"(<!-- gen:{name} -->\n).*?(<!-- /gen:{name} -->)", re.S)
+        text = pat.sub(lambda m, fn=fn: m.group(1) + fn() + "\n" + m.group(2), text)
     return text
 
 

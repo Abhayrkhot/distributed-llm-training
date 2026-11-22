@@ -1,0 +1,301 @@
+{
+  "schema_version": 1,
+  "kind": "nccl_bw",
+  "run_id": "nccl_bw-12066735-20261122T214613",
+  "created_at": "2026-11-22T21:46:13+00:00",
+  "git_sha": "9bf8143",
+  "lock_hash": "eb43bfceb90e",
+  "slurm": {
+    "job_id": "12066735",
+    "partition": "gpu-short",
+    "nodes": "d4052",
+    "gpus_on_node": "2",
+    "cpus_on_node": "16",
+    "host": "d4052"
+  },
+  "env": {
+    "python": "3.12.16",
+    "torch": "2.14.1+cu126",
+    "transformers": "5.24.0",
+    "peft": "0.22.0",
+    "bitsandbytes": "0.50.2",
+    "accelerate": "1.16.0",
+    "nvidia-nccl-cu12": "2.29.3",
+    "cuda_runtime": "12.6",
+    "nccl_runtime": "2.29.3"
+  },
+  "hardware": {
+    "gpu_name": "NVIDIA H200",
+    "gpu_count": 2,
+    "gpu_total_bytes": 150121545728,
+    "driver": "570.86.15"
+  },
+  "config": {
+    "min_bytes": 65536,
+    "max_bytes": 1073741824,
+    "factor": 4,
+    "repeats": 5,
+    "warmup": 5,
+    "target_ms": 50.0,
+    "world_size": 2,
+    "dtype": "bfloat16",
+    "ops": [
+      "all_reduce",
+      "all_gather",
+      "reduce_scatter"
+    ]
+  },
+  "metrics": {
+    "rows": [
+      {
+        "op": "all_reduce",
+        "bytes": 65536,
+        "time_us_median": 21.1,
+        "time_us_min": 19.7,
+        "time_us_max": 29.4,
+        "algbw_gbps": 3.11,
+        "busbw_gbps": 3.11,
+        "iters": 774
+      },
+      {
+        "op": "all_reduce",
+        "bytes": 262144,
+        "time_us_median": 21.41,
+        "time_us_min": 19.93,
+        "time_us_max": 36.33,
+        "algbw_gbps": 12.24,
+        "busbw_gbps": 12.24,
+        "iters": 1000
+      },
+      {
+        "op": "all_reduce",
+        "bytes": 1048576,
+        "time_us_median": 21.2,
+        "time_us_min": 20.85,
+        "time_us_max": 39.1,
+        "algbw_gbps": 49.46,
+        "busbw_gbps": 49.46,
+        "iters": 1000
+      },
+      {
+        "op": "all_reduce",
+        "bytes": 4194304,
+        "time_us_median": 33.2,
+        "time_us_min": 33.18,
+        "time_us_max": 33.25,
+        "algbw_gbps": 126.32,
+        "busbw_gbps": 126.32,
+        "iters": 1000
+      },
+      {
+        "op": "all_reduce",
+        "bytes": 16777216,
+        "time_us_median": 74.55,
+        "time_us_min": 74.39,
+        "time_us_max": 75.3,
+        "algbw_gbps": 225.05,
+        "busbw_gbps": 225.05,
+        "iters": 563
+      },
+      {
+        "op": "all_reduce",
+        "bytes": 67108864,
+        "time_us_median": 249.33,
+        "time_us_min": 248.74,
+        "time_us_max": 249.44,
+        "algbw_gbps": 269.16,
+        "busbw_gbps": 269.16,
+        "iters": 192
+      },
+      {
+        "op": "all_reduce",
+        "bytes": 268435456,
+        "time_us_median": 883.54,
+        "time_us_min": 882.92,
+        "time_us_max": 884.83,
+        "algbw_gbps": 303.82,
+        "busbw_gbps": 303.82,
+        "iters": 55
+      },
+      {
+        "op": "all_reduce",
+        "bytes": 1073741824,
+        "time_us_median": 3270.64,
+        "time_us_min": 3266.33,
+        "time_us_max": 3275.18,
+        "algbw_gbps": 328.3,
+        "busbw_gbps": 328.3,
+        "iters": 15
+      },
+      {
+        "op": "all_gather",
+        "bytes": 65536,
+        "time_us_median": 22.36,
+        "time_us_min": 20.44,
+        "time_us_max": 40.88,
+        "algbw_gbps": 2.93,
+        "busbw_gbps": 1.47,
+        "iters": 1000
+      },
+      {
+        "op": "all_gather",
+        "bytes": 262144,
+        "time_us_median": 22.78,
+        "time_us_min": 21.03,
+        "time_us_max": 40.48,
+        "algbw_gbps": 11.51,
+        "busbw_gbps": 5.75,
+        "iters": 1000
+      },
+      {
+        "op": "all_gather",
+        "bytes": 1048576,
+        "time_us_median": 27.7,
+        "time_us_min": 21.14,
+        "time_us_max": 41.39,
+        "algbw_gbps": 37.86,
+        "busbw_gbps": 18.93,
+        "iters": 1000
+      },
+      {
+        "op": "all_gather",
+        "bytes": 4194304,
+        "time_us_median": 28.01,
+        "time_us_min": 26.95,
+        "time_us_max": 40.0,
+        "algbw_gbps": 149.73,
+        "busbw_gbps": 74.86,
+        "iters": 1000
+      },
+      {
+        "op": "all_gather",
+        "bytes": 16777216,
+        "time_us_median": 54.71,
+        "time_us_min": 54.22,
+        "time_us_max": 59.03,
+        "algbw_gbps": 306.63,
+        "busbw_gbps": 153.32,
+        "iters": 788
+      },
+      {
+        "op": "all_gather",
+        "bytes": 67108864,
+        "time_us_median": 157.98,
+        "time_us_min": 157.55,
+        "time_us_max": 167.37,
+        "algbw_gbps": 424.79,
+        "busbw_gbps": 212.4,
+        "iters": 303
+      },
+      {
+        "op": "all_gather",
+        "bytes": 268435456,
+        "time_us_median": 546.63,
+        "time_us_min": 546.07,
+        "time_us_max": 547.39,
+        "algbw_gbps": 491.07,
+        "busbw_gbps": 245.54,
+        "iters": 89
+      },
+      {
+        "op": "all_gather",
+        "bytes": 1073741824,
+        "time_us_median": 1974.7,
+        "time_us_min": 1972.6,
+        "time_us_max": 1977.02,
+        "algbw_gbps": 543.75,
+        "busbw_gbps": 271.87,
+        "iters": 25
+      },
+      {
+        "op": "reduce_scatter",
+        "bytes": 65536,
+        "time_us_median": 21.76,
+        "time_us_min": 20.56,
+        "time_us_max": 30.44,
+        "algbw_gbps": 3.01,
+        "busbw_gbps": 1.51,
+        "iters": 1000
+      },
+      {
+        "op": "reduce_scatter",
+        "bytes": 262144,
+        "time_us_median": 33.93,
+        "time_us_min": 21.39,
+        "time_us_max": 41.36,
+        "algbw_gbps": 7.73,
+        "busbw_gbps": 3.86,
+        "iters": 1000
+      },
+      {
+        "op": "reduce_scatter",
+        "bytes": 1048576,
+        "time_us_median": 22.38,
+        "time_us_min": 20.71,
+        "time_us_max": 40.36,
+        "algbw_gbps": 46.84,
+        "busbw_gbps": 23.42,
+        "iters": 1000
+      },
+      {
+        "op": "reduce_scatter",
+        "bytes": 4194304,
+        "time_us_median": 24.14,
+        "time_us_min": 24.07,
+        "time_us_max": 40.23,
+        "algbw_gbps": 173.74,
+        "busbw_gbps": 86.87,
+        "iters": 1000
+      },
+      {
+        "op": "reduce_scatter",
+        "bytes": 16777216,
+        "time_us_median": 51.32,
+        "time_us_min": 50.38,
+        "time_us_max": 62.09,
+        "algbw_gbps": 326.93,
+        "busbw_gbps": 163.46,
+        "iters": 817
+      },
+      {
+        "op": "reduce_scatter",
+        "bytes": 67108864,
+        "time_us_median": 164.31,
+        "time_us_min": 164.28,
+        "time_us_max": 171.77,
+        "algbw_gbps": 408.43,
+        "busbw_gbps": 204.22,
+        "iters": 287
+      },
+      {
+        "op": "reduce_scatter",
+        "bytes": 268435456,
+        "time_us_median": 581.11,
+        "time_us_min": 581.0,
+        "time_us_max": 581.65,
+        "algbw_gbps": 461.94,
+        "busbw_gbps": 230.97,
+        "iters": 35
+      },
+      {
+        "op": "reduce_scatter",
+        "bytes": 1073741824,
+        "time_us_median": 2014.29,
+        "time_us_min": 2009.86,
+        "time_us_max": 2027.88,
+        "algbw_gbps": 533.06,
+        "busbw_gbps": 266.53,
+        "iters": 24
+      }
+    ]
+  },
+  "summary": {
+    "world_size": 2,
+    "peak_busbw_gbps": {
+      "all_reduce": 328.3,
+      "all_gather": 271.87,
+      "reduce_scatter": 266.53
+    }
+  },
+  "notes": ""
+}

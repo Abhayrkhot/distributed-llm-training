@@ -64,4 +64,41 @@ On the dev box (CPU, gloo):
 - USR1 path: SIGUSR1 sent to torchrun's children after 8 s stopped both ranks at the same step (20)
   and the run exited 0 with its record written.
 
-PHASE1_RESULTS
+## 5. GPU results
+
+One 2-GPU job, 12066735 on d4052, 2026-11-22, commit `9bf8143`, lock `eb43bfceb90e`
+([slurm/phase1_smoke.sbatch](../slurm/phase1_smoke.sbatch); records in
+[results/nccl_bw/](../results/nccl_bw/) and [results/smoke_train/](../results/smoke_train/)).
+
+**CPU binding.** With `--gres-flags=enforce-binding` the job got 16 CPUs, 8 on each NUMA node, each
+group local to its GPU (`nvidia-smi topo -m` in the log). The Phase 0 mismatch is gone.
+
+**NCCL, 2 GPUs over NVSwitch** (BF16, median of 5, bus bandwidth as nccl-tests defines it):
+
+| Collective | 64 KiB | 16 MiB | 256 MiB | 1 GiB |
+|---|---|---|---|---|
+| all_reduce | 21 us | 225 GB/s | 304 GB/s | 328 GB/s |
+| all_gather | 22 us | 153 GB/s | 246 GB/s | 272 GB/s |
+| reduce_scatter | 22 us | 164 GB/s | 231 GB/s | 267 GB/s |
+
+Small messages sit on a ~21 us latency floor. At 1 GiB, all_reduce reaches 83% of the 395 GB/s
+copy-engine peer bandwidth from Phase 0; all_gather and reduce_scatter, which FSDP2 uses, reach 67-69%.
+
+**Smoke training, Qwen2.5-0.5B** (random init from the pinned config, FP32 master weights, BF16
+autocast, micro-batch 4 x 2,048 tokens per GPU, one fixed batch per rank, 40 steps):
+
+| GPUs | Step (median) | Tokens/s | MFU | Peak allocated |
+|---|---|---|---|---|
+| 1 | 107.4 ms | 76,263 | 26.9% | 27.3 GiB |
+| 2 (DDP) | 113.5 ms | 144,379 | 25.5% | 28.2-29.2 GiB |
+
+Two GPUs give 1.89x the tokens/s of one (95% scaling efficiency). The 6.1 ms added per step is about
+the time one full FP32 gradient all-reduce takes at the measured bandwidth (1.98 GB at 328 GB/s is
+6.0 ms), so at this size most of DDP's communication may not be hidden behind backward. Phase 3's
+step-time breakdown measures that directly. The low MFU is expected for a 0.5B model: attention and
+the 151,936-token output layer are a large share of the time at this width.
+
+**Wall-time stop.** The last step ran 2-GPU smoke training with no step limit. Slurm sent USR1 at
+16:56:33, 300 s before the 16 min limit; the batch shell forwarded it to both workers, both stopped
+at step 4,449, the record was written and torchrun exited 0 at 16:56:36. Phase 2 adds the checkpoint
+at that point.

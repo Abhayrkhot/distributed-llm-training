@@ -52,3 +52,13 @@ def test_readme_is_generated():
         [sys.executable, "scripts/gen_readme.py", "--check"], cwd=ROOT, capture_output=True, text=True
     )
     assert out.returncode == 0, out.stdout
+
+
+def test_readme_render_fills_empty_and_filled_sections():
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import gen_readme
+
+    empty = "a\n<!-- gen:smoke -->\n<!-- /gen:smoke -->\nb\n"
+    once = gen_readme.render(empty)
+    assert once != empty and "<!-- /gen:smoke -->\nb\n" in once
+    assert gen_readme.render(once) == once  # idempotent, so --check is stable
