@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 SCHEMA_VERSION = 1
-KINDS = {"nccl_bw", "smoke_train", "bench", "train", "eval"}
+KINDS = {"nccl_bw", "smoke_train", "bench", "train", "eval", "sweep"}
 REQUIRED = {
     "schema_version": int,
     "kind": str,
@@ -111,7 +111,8 @@ def new_record(kind: str, config: dict, metrics: dict, summary: dict, notes: str
         raise ValueError(f"unknown kind {kind!r}")
     slurm = collect_slurm()
     stamp = _dt.datetime.now(_dt.UTC).strftime("%Y%m%dT%H%M%S")
-    run_id = f"{kind}-{slurm['job_id'] or 'local'}-{stamp}"
+    # the pid keeps records unique when runs that share a job (sweep pairs) finish in the same second
+    run_id = f"{kind}-{slurm['job_id'] or 'local'}-{stamp}-p{os.getpid()}"
     return {
         "schema_version": SCHEMA_VERSION,
         "kind": kind,

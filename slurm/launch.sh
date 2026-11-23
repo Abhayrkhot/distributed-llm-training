@@ -2,6 +2,7 @@
 #
 #   source "$SLURM_SUBMIT_DIR/slurm/launch.sh"
 #   dlt_torchrun NPROC <python module> [args...]
+#   dlt_python <python args...>        (a process that handles USR1 itself, e.g. dlt.sweep)
 #
 # The sbatch files ask Slurm for SIGUSR1 to the batch shell 300 s before the wall-time limit. torchrun
 # does not handle USR1 (its default action would kill it), so the shell traps it and forwards it to the
@@ -22,11 +23,17 @@ cd "$SRC" || exit 3
 
 DLT_PID=""
 DLT_USR1_SEEN=0
+DLT_USR1_SELF=0
 
 forward_usr1() {
   DLT_USR1_SEEN=1
   if [ -z "$DLT_PID" ]; then
     echo "$(date -Is) USR1: no workers running"
+    return
+  fi
+  if [ "$DLT_USR1_SELF" = 1 ]; then
+    echo "$(date -Is) USR1: forwarding to $DLT_PID"
+    kill -USR1 "$DLT_PID"
     return
   fi
   # torchrun's direct children are the workers (read from /proc: no procps dependency)
@@ -49,6 +56,23 @@ dlt_torchrun() {
     kill -0 "$DLT_PID" 2>/dev/null || break
   done
   DLT_PID=""
+  echo "$(date -Is) exit=$rc"
+  return "$rc"
+}
+
+dlt_python() {
+  local rc
+  echo "$(date -Is) python $*"
+  "$VENV/bin/python" "$@" &
+  DLT_PID=$!
+  DLT_USR1_SELF=1
+  while true; do
+    wait "$DLT_PID"
+    rc=$?
+    kill -0 "$DLT_PID" 2>/dev/null || break
+  done
+  DLT_PID=""
+  DLT_USR1_SELF=0
   echo "$(date -Is) exit=$rc"
   return "$rc"
 }
