@@ -129,6 +129,12 @@ Median over repeats, (min-max) where there are several. Step split and exposed c
 | 1p5b-single-ac | 1.5B | 1 | single | on | 4 x 8 | 3 | 27,310 (27,239-27,526) | 28.5 (28.4-28.7)% | 38.0% | 0.63/1.73/0.02 | - | 41.2 | 9.4 | 31 |
 | 3b-single-ac | 3B | 1 | single | on | 2 x 16 | 3 | 13,623 (13,612-13,763) | 28.0 (28.0-28.3)% | 37.3% | 1.29/3.47/0.04 | - | 56.0 | 18.0 | 15 |
 | 7b-single-ac | 7B | 1 | single | on | 1 x 32 | 3 | 6,685 (6,587-6,690) | 30.3 (29.9-30.4)% | 40.5% | 2.44/7.28/0.09 | - | 129.2 | 43.4 | 18 |
+| 0p5b-fsdp2-1gpu | 0.5B | 1 | fsdp2 | off | 4 x 8 | 3 | 69,579 (67,350-70,154) | 24.6 (23.8-24.8)% | 24.6% | 0.32/0.61/0.01 | - | 34.5 | 2.1 | 9 |
+| 1p5b-fsdp2-1gpu | 1.5B | 1 | fsdp2 | off | 4 x 8 | 3 | 33,202 (33,148-34,085) | 34.6 (34.6-35.6)% | 34.6% | 0.64/1.32/0.02 | - | 62.0 | 4.1 | 8 |
+| 1p5b-fsdp2-ac-1gpu | 1.5B | 1 | fsdp2 | on | 4 x 8 | 3 | 28,191 (27,381-28,240) | 29.4 (28.6-29.5)% | 39.2% | 0.62/1.68/0.02 | - | 40.5 | 4.1 | 8 |
+| 3b-fsdp2-1gpu | 3B | 1 | fsdp2 | off | 2 x 16 | 3 | 16,423 (16,337-16,777) | 33.8 (33.6-34.5)% | 33.8% | 1.23/2.73/0.04 | - | 72.7 | 5.0 | 11 |
+| 3b-fsdp2-ac-1gpu | 3B | 1 | fsdp2 | on | 2 x 16 | 3 | 13,693 (13,268-13,700) | 28.1 (27.3-28.2)% | 37.5% | 1.30/3.45/0.04 | - | 55.4 | 5.0 | 9 |
+| 7b-fsdp2-ac-1gpu | 7B | 1 | fsdp2 | on | 1 x 32 | 3 | 6,059 (6,047-6,181) | 27.5 (27.5-28.1)% | 36.7% | 2.72/8.01/0.09 | - | 122.6 | 6.6 | 11 |
 <!-- /gen:ladder -->
 
 ### Scaling from 1 to 2 GPUs
@@ -139,14 +145,14 @@ Scaling efficiency = tokens/s on 2 GPUs / (2 x tokens/s on 1 GPU), same model, d
 | Model | 1-GPU run | 2-GPU run | 1 GPU tokens/s | 2 GPU tokens/s | Efficiency |
 |---|---|---|---|---|---|
 | 0.5B | 0p5b-single | 0p5b-ddp | 69,625 | 134,817 | 96.8% |
-| 0.5B | 0p5b-single | 0p5b-fsdp2 | 69,625 | 128,914 | 92.6% * |
+| 0.5B | 0p5b-fsdp2-1gpu | 0p5b-fsdp2 | 69,579 | 128,914 | 92.6% |
 | 1.5B | 1p5b-single | 1p5b-ddp | 33,744 | 65,234 | 96.7% |
-| 1.5B | 1p5b-single | 1p5b-fsdp2 | 33,744 | 66,534 | 98.6% * |
-| 1.5B | 1p5b-single-ac | 1p5b-fsdp2-ac | 27,310 | 54,877 | 100.5% * |
+| 1.5B | 1p5b-fsdp2-1gpu | 1p5b-fsdp2 | 33,202 | 66,534 | 100.2% |
+| 1.5B | 1p5b-fsdp2-ac-1gpu | 1p5b-fsdp2-ac | 28,191 | 54,877 | 97.3% |
 | 3B | 3b-single | 3b-ddp | 17,216 | 33,509 | 97.3% |
-| 3B | 3b-single | 3b-fsdp2 | 17,216 | 33,188 | 96.4% * |
-| 3B | 3b-single-ac | 3b-fsdp2-ac | 13,623 | 27,345 | 100.4% * |
-| 7B | 7b-single-ac | 7b-fsdp2-ac | 6,685 | 12,558 | 93.9% * |
+| 3B | 3b-fsdp2-1gpu | 3b-fsdp2 | 16,423 | 33,188 | 101.0% |
+| 3B | 3b-fsdp2-ac-1gpu | 3b-fsdp2-ac | 13,693 | 27,345 | 99.9% |
+| 7B | 7b-fsdp2-ac-1gpu | 7b-fsdp2-ac | 6,059 | 12,558 | 103.6% |
 | 7B | none (does not fit on 1 GPU) | 7b-fsdp2 | - | 14,745 | n/a; MFU 33.5% |
 | 7B | none (does not fit on 1 GPU) | 7b-fsdp2-ac-every | - | 11,779 | n/a; MFU 26.7% |
 | 14B | none (does not fit on 1 GPU) | 14b-fsdp2-ac-every | - | 5,839 | n/a; MFU 26.6% |
@@ -157,7 +163,7 @@ Scaling efficiency = tokens/s on 2 GPUs / (2 x tokens/s on 1 GPU), same model, d
 <!-- gen:memory -->
 Predicted peak allocated memory per rank (dlt.metrics.memory, analytical, not fitted) against the measured `max_memory_allocated` (max over ranks), for every run including OOMs. Limit: 139.8 GiB visible per H200. "Now" is predictor version 3; "at run time" is the version the run recorded (version 1 double-counted FSDP2 gradients under no-sync accumulation; version 2 kept autocast weight copies until backward under checkpointing).
 
-Over 54 finished runs: median absolute error 1.1%, worst 4.0% (at run time: median absolute error 4.0%, worst 21.3%); fit vs OOM predicted correctly for 22 of 22 configurations.
+Over 72 finished runs: median absolute error 1.6%, worst 4.0% (at run time: median absolute error 2.1%, worst 21.3%); fit vs OOM predicted correctly for 28 of 28 configurations.
 
 | Run | Predicted now (GiB) | At run time (GiB) | Measured (GiB) | Error now | Outcome |
 |---|---|---|---|---|---|
@@ -183,6 +189,12 @@ Over 54 finished runs: median absolute error 1.1%, worst 4.0% (at run time: medi
 | 1p5b-single-ac | 42.0 | 44.5 | 41.2 | +2.0% | fit (predicted fit) |
 | 3b-single-ac | 56.5 | 61.6 | 56.0 | +0.9% | fit (predicted fit) |
 | 7b-single-ac | 128.1 | 132.1 | 129.2 | -0.9% | fit (predicted fit) |
+| 0p5b-fsdp2-1gpu | 34.9 | 34.9 | 34.5 | +1.1% | fit (predicted fit) |
+| 1p5b-fsdp2-1gpu | 62.9 | 62.9 | 62.0 | +1.6% | fit (predicted fit) |
+| 1p5b-fsdp2-ac-1gpu | 41.7 | 41.7 | 40.5 | +2.9% | fit (predicted fit) |
+| 3b-fsdp2-1gpu | 73.9 | 73.9 | 72.7 | +1.7% | fit (predicted fit) |
+| 3b-fsdp2-ac-1gpu | 56.5 | 56.5 | 55.4 | +2.1% | fit (predicted fit) |
+| 7b-fsdp2-ac-1gpu | 122.6 | 122.6 | 122.6 | +0.0% | fit (predicted fit) |
 
 Out of sample, on the 66 Phase 4 runs (configurations the corrections never saw: larger micro-batches, chunked loss, longer sequences, other kernels): median absolute error 1.6%, worst 7.1% (worst: 1p5b-bucket-view).
 <!-- /gen:memory -->
@@ -199,6 +211,8 @@ Same model, backend, GPUs and micro-batch, checkpointing every decoder layer on 
 | 7B | 2 | fsdp2 | 89.4 -> 77.7 | 13% | 14,745 -> 12,558 | 14.8% |
 | 1.5B | 1 | single | 67.7 -> 41.2 | 39% | 33,744 -> 27,310 | 19.1% |
 | 3B | 1 | single | 80.8 -> 56.0 | 31% | 17,216 -> 13,623 | 20.9% |
+| 1.5B | 1 | fsdp2 | 62.0 -> 40.5 | 35% | 33,202 -> 28,191 | 15.1% |
+| 3B | 1 | fsdp2 | 72.7 -> 55.4 | 24% | 16,423 -> 13,693 | 16.6% |
 <!-- /gen:ac -->
 
 ## Profiling and tuning (Phase 4)
@@ -247,6 +261,14 @@ Each change against its workload's baseline, both run 3 times in the same sweep.
 | 7b-compile-hold | 20,278 (20,276-20,310) | +39.6% | 46.0% | 98.0 | 0.87/2.32/0.05 | 0.019 | 0.071 |
 | 1p5b-base | 64,606 (64,393-64,770) | baseline | 33.7% | 73.5 | 0.32/0.68/0.02 | 0.014 | 0.047 |
 | 1p5b-compile | 81,277 (81,010-81,315) | +25.8% | 42.4% | 69.5 | 0.26/0.53/0.02 | 0.006 | 0.027 |
+
+**Round p4c**: the changes that paid off, combined, configs/sweeps/p4c_combined.yaml.
+
+| Run | Tokens/s | Change | MFU | Peak alloc (GiB) | Fwd / bwd / opt (s) | Exposed comm (s) | GPU idle (s) |
+|---|---|---|---|---|---|---|---|
+| 7b-base | 14,384 (14,380-14,438) | baseline | 32.6% | 89.4 | 1.50/3.01/0.05 | 0.187 | 0.177 |
+| 7b-best | 22,720 (22,716-22,755) | +58.0% | 51.6% | 110.5 | 0.86/1.98/0.05 | 0.062 | 0.047 |
+| 7b-best-flash | 22,759 (22,752-22,765) | +58.2% | 51.6% | 110.5 | 0.86/1.97/0.05 | 0.063 | 0.046 |
 <!-- /gen:tuning -->
 
 <!-- gen:profile -->

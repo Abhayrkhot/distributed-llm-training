@@ -3,7 +3,7 @@
 Qwen2.5 0.5B, 1.5B, 3B, 7B and 14B, full-parameter training from the pretrained weights on 1 and 2
 H200s. Sweep file [configs/sweeps/p3_ladder.yaml](../configs/sweeps/p3_ladder.yaml), run by
 [src/dlt/sweep.py](../src/dlt/sweep.py) in jobs 12073550 (first pass, 58 runs, 73 min),
-12075847 (the single-GPU checkpointing runs, redone after a bug fix) and 12076199 (FSDP2 on 1 GPU),
+12075847 (the single-GPU checkpointing runs, redone after a bug fix) and 12082451 (FSDP2 on 1 GPU),
 2026-11-22 and 23. The tables are generated into the README ("Scaling and memory study") from
 [results/train/](../results/train/).
 
@@ -34,13 +34,15 @@ size 896 the GEMMs are small, and the 151,936-token output layer and its FP32 cr
 share of the step. 7B reaches 33.5% with FSDP2 on 2 GPUs, and 14B, which only fits with checkpointing and
 per-micro-batch gradient sync, 26.6% (35.4% HFU).
 
-**Scaling from 1 to 2 GPUs.** DDP against the single-GPU run: 96.8% (0.5B), 96.7% (1.5B), 97.3% (3B).
-FSDP2 is compared against FSDP2 on 1 GPU (README table); comparing it against the autocast single-GPU
-run instead gives numbers above 100% for the checkpointed 1.5B and 3B pairs, because the two use
-different BF16 mechanisms (per-op autocast casts, repeated in the recompute, against FSDP2's parameter
-casts), so those rows are flagged and the same-precision baseline was added. 7B with checkpointing
-scales at 93.9% against the single-GPU run. 14B has no 1-GPU baseline (it does not fit), so it is
-reported as MFU.
+**Scaling from 1 to 2 GPUs.** Each 2-GPU run is compared with the 1-GPU run that uses the same
+precision mechanism: DDP with the single-GPU autocast run (96.8% at 0.5B, 96.7% at 1.5B, 97.3% at 3B),
+FSDP2 with FSDP2 on one GPU (92.6%, 100.2% and 101.0%; with checkpointing 97.3% at 1.5B, 99.9% at 3B
+and 103.6% at 7B). The first table compared FSDP2 against the autocast run and showed the checkpointed
+pairs above 100%; FSDP2 casts parameters to BF16 once per gather instead of per op, so that mixed two
+precision mechanisms, and the FSDP2 1-GPU runs (job 12082451) replaced it. FSDP2 at or slightly above
+100% is real: per micro-batch the 2-GPU runs take the same time (7B: 0.322 s vs 0.335 s on one GPU),
+but the optimizer step and gradient clipping run on half the parameters per GPU, and the 7B 1-GPU run
+works at 122.6 of 139.8 GiB. 14B does not fit on one GPU and is reported as MFU.
 
 **Communication.** Exposed communication (NCCL kernels running with no compute kernel alongside) is
 0.01-0.02 s per step for DDP and 0.02-0.06 s for FSDP2 up to 3B, 1-3% of the step, except 0.5B FSDP2 at
