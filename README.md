@@ -210,6 +210,8 @@ Qwen2.5-7B with FSDP2 and Qwen2.5-1.5B with DDP, both on 2 H200s, one change at 
 <!-- gen:tuning -->
 Each change against its workload's baseline, both run 3 times in the same sweep. Change is the median tokens/s against the baseline median; "noise" marks a change whose min-max range overlaps the baseline's. GPU idle is time inside the profiled steps with no kernel running.
 
+**Round p4**: one change at a time, configs/sweeps/p4_tuning.yaml.
+
 | Run | Tokens/s | Change | MFU | Peak alloc (GiB) | Fwd / bwd / opt (s) | Exposed comm (s) | GPU idle (s) |
 |---|---|---|---|---|---|---|---|
 | 7b-base | 14,570 (14,541-14,570) | baseline | 33.1% | 89.4 | 1.49/2.96/0.05 | 0.146 | 0.178 |
@@ -234,6 +236,17 @@ Each change against its workload's baseline, both run 3 times in the same sweep.
 | 1p5b-sdpa-cudnn | 67,252 (67,198-67,288) | +3.3% | 35.1% | 73.5 | 0.30/0.65/0.02 | 0.010 | 0.049 |
 | 1p5b-sdpa-efficient | 59,894 (59,805-60,084) | -8.0% | 31.2% | 73.5 | 0.33/0.74/0.02 | 0.008 | 0.046 |
 | 1p5b-seq4096 | 60,697 (60,611-60,721) | -6.7% | 34.9% | 73.5 | 0.34/0.73/0.02 | 0.010 | 0.048 |
+
+**Round p4b**: the two fixes the Nsight profiles pointed to, configs/sweeps/p4b_fusion.yaml.
+
+| Run | Tokens/s | Change | MFU | Peak alloc (GiB) | Fwd / bwd / opt (s) | Exposed comm (s) | GPU idle (s) |
+|---|---|---|---|---|---|---|---|
+| 7b-base | 14,521 (14,429-14,524) | baseline | 33.0% | 89.4 | 1.48/2.98/0.05 | 0.133 | 0.167 |
+| 7b-hold | 18,014 (18,014-18,018) | +24.1% | 40.9% | 101.6 | 1.02/2.57/0.05 | 0.022 | 0.150 |
+| 7b-compile | 16,263 (16,263-16,273) | +12.0% | 36.9% | 85.8 | 1.32/2.66/0.05 | 0.131 | 0.065 |
+| 7b-compile-hold | 20,278 (20,276-20,310) | +39.6% | 46.0% | 98.0 | 0.87/2.32/0.05 | 0.019 | 0.071 |
+| 1p5b-base | 64,606 (64,393-64,770) | baseline | 33.7% | 73.5 | 0.32/0.68/0.02 | 0.014 | 0.047 |
+| 1p5b-compile | 81,277 (81,010-81,315) | +25.8% | 42.4% | 69.5 | 0.26/0.53/0.02 | 0.006 | 0.027 |
 <!-- /gen:tuning -->
 
 <!-- gen:profile -->
@@ -248,13 +261,27 @@ Nsight Systems, rank 0, GPU kernel time per optimizer step by category (share of
 ## Qwen2.5-72B in NF4 (Phase 5)
 
 <!-- gen:nf4 -->
-_No 72B NF4 runs yet._
+Qwen2.5-72B at `efba10c8e5`. Tokenizer: special-token ids correct, 0 round-trip failures over 200 example texts, vocabulary identical to Qwen2.5-0.5B's.
+
+| Load path | GPUs | Load (s) | Peak GPU memory (GiB) | Host RSS (GiB) |
+|---|---|---|---|---|
+| BF16 checkpoint, quantized to NF4 while loading | 1 | 391 | 38.8 | 136.4 |
+| saved NF4 checkpoint (38.4 GiB on disk) | 1 | 114 | 66.2 | - |
+| BF16, layers split over 2 GPUs | 2 | 329 | 71.3, 68.6 | 136.3 |
+| NF4 forward pass | 1 | 14 | 42.0 | 39.2 |
+
+NF4 vs BF16, teacher-forced over 200 validation questions (301,661 positions, 12,133 in the SQL): the argmax next token agrees at 93.44% of positions (97.81% in the SQL); perplexity of the gold SQL 1.9367 (NF4) vs 1.9305 (BF16), a +0.32% gap (+0.68% over all tokens).
 <!-- /gen:nf4 -->
 
 ## 72B QLoRA on BIRD text-to-SQL (Phases 6-7)
 
 <!-- gen:bird -->
-_No BIRD evaluations yet._
+Execution accuracy (EX): the predicted SQL returns the same set of rows as the gold SQL on the database (BIRD's official criterion), 95% bootstrap CI over questions. Same schema text, greedy decoding and scorer for every model; the base model gets 3 worked examples from other databases, the fine-tuned model none; the Instruct model (NF4, chat template) is a reference, not a baseline. "val" is the database-level holdout from BIRD train; "dev" is BIRD dev (1106 split).
+
+| Run | Model | Split | Questions | EX | 95% CI | Simple / moderate / challenging |
+|---|---|---|---|---|---|---|
+| base-val | base | val | 880 | 55.5% | 52.2-58.8 | - |
+| instruct-val | instruct | val | 880 | 70.2% | 67.2-73.3 | - |
 <!-- /gen:bird -->
 
 <!-- gen:qlora -->

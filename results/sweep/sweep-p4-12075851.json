@@ -1,0 +1,1077 @@
+{
+  "schema_version": 1,
+  "kind": "sweep",
+  "run_id": "sweep-p4-12075851",
+  "created_at": "2026-11-23T10:44:12+00:00",
+  "git_sha": "1c0c175",
+  "lock_hash": "64701aa313f8",
+  "slurm": {
+    "job_id": "12075851",
+    "partition": "gpu-short",
+    "nodes": "d4055",
+    "gpus_on_node": "2",
+    "cpus_on_node": "16",
+    "host": "d4055"
+  },
+  "env": {
+    "python": "3.12.16",
+    "torch": "2.14.1+cu126",
+    "transformers": "5.24.0",
+    "peft": "0.22.0",
+    "bitsandbytes": "0.50.2",
+    "accelerate": "1.16.0",
+    "nvidia-nccl-cu12": "2.29.3",
+    "cuda_runtime": "12.6",
+    "nccl_runtime": "2.29.3"
+  },
+  "hardware": {
+    "gpu_name": "NVIDIA H200",
+    "gpu_count": 2,
+    "gpu_total_bytes": 150121545728,
+    "driver": "570.86.15"
+  },
+  "config": {
+    "spec": {
+      "name": "p4",
+      "repeats": 3,
+      "run_timeout_s": 1500,
+      "base": {
+        "init": "pretrained",
+        "data": "${DLT_HOME}/data/fineweb-edu-000/train.bin",
+        "seq_len": 2048,
+        "global_batch": 32,
+        "steps": 25,
+        "warmup_steps": 5,
+        "lr": 1e-05,
+        "timing_warmup": 5,
+        "profile_steps": 2,
+        "profile_start": 15
+      },
+      "runs": [
+        {
+          "name": "7b-base",
+          "gpus": 2,
+          "set": {
+            "model": "Qwen/Qwen2.5-7B",
+            "backend": "fsdp2",
+            "micro_batch": 1
+          }
+        },
+        {
+          "name": "7b-no-reshard",
+          "gpus": 2,
+          "set": {
+            "model": "Qwen/Qwen2.5-7B",
+            "backend": "fsdp2",
+            "micro_batch": 1,
+            "reshard_after_forward": false
+          }
+        },
+        {
+          "name": "7b-prefetch2",
+          "gpus": 2,
+          "set": {
+            "model": "Qwen/Qwen2.5-7B",
+            "backend": "fsdp2",
+            "micro_batch": 1,
+            "fsdp_prefetch": 2
+          }
+        },
+        {
+          "name": "7b-micro2",
+          "gpus": 2,
+          "set": {
+            "model": "Qwen/Qwen2.5-7B",
+            "backend": "fsdp2",
+            "micro_batch": 2
+          }
+        },
+        {
+          "name": "7b-micro2-chunk",
+          "gpus": 2,
+          "set": {
+            "model": "Qwen/Qwen2.5-7B",
+            "backend": "fsdp2",
+            "micro_batch": 2,
+            "loss_chunk": 1024
+          }
+        },
+        {
+          "name": "7b-chunk",
+          "gpus": 2,
+          "set": {
+            "model": "Qwen/Qwen2.5-7B",
+            "backend": "fsdp2",
+            "micro_batch": 1,
+            "loss_chunk": 1024
+          }
+        },
+        {
+          "name": "7b-sdpa-flash",
+          "gpus": 2,
+          "set": {
+            "model": "Qwen/Qwen2.5-7B",
+            "backend": "fsdp2",
+            "micro_batch": 1,
+            "sdpa_backend": "flash"
+          }
+        },
+        {
+          "name": "7b-sdpa-cudnn",
+          "gpus": 2,
+          "set": {
+            "model": "Qwen/Qwen2.5-7B",
+            "backend": "fsdp2",
+            "micro_batch": 1,
+            "sdpa_backend": "cudnn"
+          }
+        },
+        {
+          "name": "7b-sdpa-efficient",
+          "gpus": 2,
+          "set": {
+            "model": "Qwen/Qwen2.5-7B",
+            "backend": "fsdp2",
+            "micro_batch": 1,
+            "sdpa_backend": "efficient"
+          }
+        },
+        {
+          "name": "7b-ac-every2",
+          "gpus": 2,
+          "set": {
+            "model": "Qwen/Qwen2.5-7B",
+            "backend": "fsdp2",
+            "micro_batch": 1,
+            "activation_checkpointing": true,
+            "ac_every": 2
+          }
+        },
+        {
+          "name": "7b-seq4096",
+          "gpus": 2,
+          "set": {
+            "model": "Qwen/Qwen2.5-7B",
+            "backend": "fsdp2",
+            "micro_batch": 1,
+            "seq_len": 4096,
+            "global_batch": 16
+          }
+        },
+        {
+          "name": "1p5b-base",
+          "gpus": 2,
+          "set": {
+            "model": "Qwen/Qwen2.5-1.5B",
+            "backend": "ddp",
+            "micro_batch": 4
+          }
+        },
+        {
+          "name": "1p5b-bucket5",
+          "gpus": 2,
+          "set": {
+            "model": "Qwen/Qwen2.5-1.5B",
+            "backend": "ddp",
+            "micro_batch": 4,
+            "ddp_bucket_mb": 5
+          }
+        },
+        {
+          "name": "1p5b-bucket100",
+          "gpus": 2,
+          "set": {
+            "model": "Qwen/Qwen2.5-1.5B",
+            "backend": "ddp",
+            "micro_batch": 4,
+            "ddp_bucket_mb": 100
+          }
+        },
+        {
+          "name": "1p5b-bucket-view",
+          "gpus": 2,
+          "set": {
+            "model": "Qwen/Qwen2.5-1.5B",
+            "backend": "ddp",
+            "micro_batch": 4,
+            "ddp_bucket_view": true
+          }
+        },
+        {
+          "name": "1p5b-micro8",
+          "gpus": 2,
+          "set": {
+            "model": "Qwen/Qwen2.5-1.5B",
+            "backend": "ddp",
+            "micro_batch": 8
+          }
+        },
+        {
+          "name": "1p5b-micro8-chunk",
+          "gpus": 2,
+          "set": {
+            "model": "Qwen/Qwen2.5-1.5B",
+            "backend": "ddp",
+            "micro_batch": 8,
+            "loss_chunk": 4096
+          }
+        },
+        {
+          "name": "1p5b-chunk",
+          "gpus": 2,
+          "set": {
+            "model": "Qwen/Qwen2.5-1.5B",
+            "backend": "ddp",
+            "micro_batch": 4,
+            "loss_chunk": 4096
+          }
+        },
+        {
+          "name": "1p5b-sdpa-flash",
+          "gpus": 2,
+          "set": {
+            "model": "Qwen/Qwen2.5-1.5B",
+            "backend": "ddp",
+            "micro_batch": 4,
+            "sdpa_backend": "flash"
+          }
+        },
+        {
+          "name": "1p5b-sdpa-cudnn",
+          "gpus": 2,
+          "set": {
+            "model": "Qwen/Qwen2.5-1.5B",
+            "backend": "ddp",
+            "micro_batch": 4,
+            "sdpa_backend": "cudnn"
+          }
+        },
+        {
+          "name": "1p5b-sdpa-efficient",
+          "gpus": 2,
+          "set": {
+            "model": "Qwen/Qwen2.5-1.5B",
+            "backend": "ddp",
+            "micro_batch": 4,
+            "sdpa_backend": "efficient"
+          }
+        },
+        {
+          "name": "1p5b-seq4096",
+          "gpus": 2,
+          "set": {
+            "model": "Qwen/Qwen2.5-1.5B",
+            "backend": "ddp",
+            "micro_batch": 2,
+            "seq_len": 4096,
+            "global_batch": 16
+          }
+        }
+      ]
+    },
+    "serial": false
+  },
+  "metrics": {
+    "runs": [
+      {
+        "run_name": "p4.7b-base.r0",
+        "entry": "7b-base",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 91.66
+      },
+      {
+        "run_name": "p4.7b-base.r1",
+        "entry": "7b-base",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 91.66
+      },
+      {
+        "run_name": "p4.7b-base.r2",
+        "entry": "7b-base",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 91.66
+      },
+      {
+        "run_name": "p4.7b-no-reshard.r0",
+        "entry": "7b-no-reshard",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 102.94
+      },
+      {
+        "run_name": "p4.7b-no-reshard.r1",
+        "entry": "7b-no-reshard",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 102.94
+      },
+      {
+        "run_name": "p4.7b-no-reshard.r2",
+        "entry": "7b-no-reshard",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 102.94
+      },
+      {
+        "run_name": "p4.7b-prefetch2.r0",
+        "entry": "7b-prefetch2",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 92.09
+      },
+      {
+        "run_name": "p4.7b-prefetch2.r1",
+        "entry": "7b-prefetch2",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 92.09
+      },
+      {
+        "run_name": "p4.7b-prefetch2.r2",
+        "entry": "7b-prefetch2",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 92.09
+      },
+      {
+        "run_name": "p4.7b-micro2.r0",
+        "entry": "7b-micro2",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 108.19
+      },
+      {
+        "run_name": "p4.7b-micro2.r1",
+        "entry": "7b-micro2",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 108.19
+      },
+      {
+        "run_name": "p4.7b-micro2.r2",
+        "entry": "7b-micro2",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 108.19
+      },
+      {
+        "run_name": "p4.7b-micro2-chunk.r0",
+        "entry": "7b-micro2-chunk",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 102.09
+      },
+      {
+        "run_name": "p4.7b-micro2-chunk.r1",
+        "entry": "7b-micro2-chunk",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 102.09
+      },
+      {
+        "run_name": "p4.7b-micro2-chunk.r2",
+        "entry": "7b-micro2-chunk",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 102.09
+      },
+      {
+        "run_name": "p4.7b-chunk.r0",
+        "entry": "7b-chunk",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 89.63
+      },
+      {
+        "run_name": "p4.7b-chunk.r1",
+        "entry": "7b-chunk",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 89.63
+      },
+      {
+        "run_name": "p4.7b-chunk.r2",
+        "entry": "7b-chunk",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 89.63
+      },
+      {
+        "run_name": "p4.7b-sdpa-flash.r0",
+        "entry": "7b-sdpa-flash",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 91.66
+      },
+      {
+        "run_name": "p4.7b-sdpa-flash.r1",
+        "entry": "7b-sdpa-flash",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 91.66
+      },
+      {
+        "run_name": "p4.7b-sdpa-flash.r2",
+        "entry": "7b-sdpa-flash",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 91.66
+      },
+      {
+        "run_name": "p4.7b-sdpa-cudnn.r0",
+        "entry": "7b-sdpa-cudnn",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 91.66
+      },
+      {
+        "run_name": "p4.7b-sdpa-cudnn.r1",
+        "entry": "7b-sdpa-cudnn",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 91.66
+      },
+      {
+        "run_name": "p4.7b-sdpa-cudnn.r2",
+        "entry": "7b-sdpa-cudnn",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 91.66
+      },
+      {
+        "run_name": "p4.7b-sdpa-efficient.r0",
+        "entry": "7b-sdpa-efficient",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 91.66
+      },
+      {
+        "run_name": "p4.7b-sdpa-efficient.r1",
+        "entry": "7b-sdpa-efficient",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 91.66
+      },
+      {
+        "run_name": "p4.7b-sdpa-efficient.r2",
+        "entry": "7b-sdpa-efficient",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 91.66
+      },
+      {
+        "run_name": "p4.7b-ac-every2.r0",
+        "entry": "7b-ac-every2",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 86.08
+      },
+      {
+        "run_name": "p4.7b-ac-every2.r1",
+        "entry": "7b-ac-every2",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 86.08
+      },
+      {
+        "run_name": "p4.7b-ac-every2.r2",
+        "entry": "7b-ac-every2",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 86.08
+      },
+      {
+        "run_name": "p4.7b-seq4096.r0",
+        "entry": "7b-seq4096",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 108.19
+      },
+      {
+        "run_name": "p4.7b-seq4096.r1",
+        "entry": "7b-seq4096",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 108.19
+      },
+      {
+        "run_name": "p4.7b-seq4096.r2",
+        "entry": "7b-seq4096",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 108.19
+      },
+      {
+        "run_name": "p4.1p5b-base.r0",
+        "entry": "1p5b-base",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 74.01
+      },
+      {
+        "run_name": "p4.1p5b-base.r1",
+        "entry": "1p5b-base",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 74.01
+      },
+      {
+        "run_name": "p4.1p5b-base.r2",
+        "entry": "1p5b-base",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 74.01
+      },
+      {
+        "run_name": "p4.1p5b-bucket5.r0",
+        "entry": "1p5b-bucket5",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 74.01
+      },
+      {
+        "run_name": "p4.1p5b-bucket5.r1",
+        "entry": "1p5b-bucket5",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 74.01
+      },
+      {
+        "run_name": "p4.1p5b-bucket5.r2",
+        "entry": "1p5b-bucket5",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 74.01
+      },
+      {
+        "run_name": "p4.1p5b-bucket100.r0",
+        "entry": "1p5b-bucket100",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 74.01
+      },
+      {
+        "run_name": "p4.1p5b-bucket100.r1",
+        "entry": "1p5b-bucket100",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 74.01
+      },
+      {
+        "run_name": "p4.1p5b-bucket100.r2",
+        "entry": "1p5b-bucket100",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 74.01
+      },
+      {
+        "run_name": "p4.1p5b-bucket-view.r0",
+        "entry": "1p5b-bucket-view",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 68.26
+      },
+      {
+        "run_name": "p4.1p5b-bucket-view.r1",
+        "entry": "1p5b-bucket-view",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 68.26
+      },
+      {
+        "run_name": "p4.1p5b-bucket-view.r2",
+        "entry": "1p5b-bucket-view",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 68.26
+      },
+      {
+        "run_name": "p4.1p5b-micro8.r0",
+        "entry": "1p5b-micro8",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 116.38
+      },
+      {
+        "run_name": "p4.1p5b-micro8.r1",
+        "entry": "1p5b-micro8",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 116.38
+      },
+      {
+        "run_name": "p4.1p5b-micro8.r2",
+        "entry": "1p5b-micro8",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 116.38
+      },
+      {
+        "run_name": "p4.1p5b-micro8-chunk.r0",
+        "entry": "1p5b-micro8-chunk",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 92.04
+      },
+      {
+        "run_name": "p4.1p5b-micro8-chunk.r1",
+        "entry": "1p5b-micro8-chunk",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 92.04
+      },
+      {
+        "run_name": "p4.1p5b-micro8-chunk.r2",
+        "entry": "1p5b-micro8-chunk",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 92.04
+      },
+      {
+        "run_name": "p4.1p5b-chunk.r0",
+        "entry": "1p5b-chunk",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 65.89
+      },
+      {
+        "run_name": "p4.1p5b-chunk.r1",
+        "entry": "1p5b-chunk",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 65.89
+      },
+      {
+        "run_name": "p4.1p5b-chunk.r2",
+        "entry": "1p5b-chunk",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 65.89
+      },
+      {
+        "run_name": "p4.1p5b-sdpa-flash.r0",
+        "entry": "1p5b-sdpa-flash",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 74.01
+      },
+      {
+        "run_name": "p4.1p5b-sdpa-flash.r1",
+        "entry": "1p5b-sdpa-flash",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 74.01
+      },
+      {
+        "run_name": "p4.1p5b-sdpa-flash.r2",
+        "entry": "1p5b-sdpa-flash",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 74.01
+      },
+      {
+        "run_name": "p4.1p5b-sdpa-cudnn.r0",
+        "entry": "1p5b-sdpa-cudnn",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 74.01
+      },
+      {
+        "run_name": "p4.1p5b-sdpa-cudnn.r1",
+        "entry": "1p5b-sdpa-cudnn",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 74.01
+      },
+      {
+        "run_name": "p4.1p5b-sdpa-cudnn.r2",
+        "entry": "1p5b-sdpa-cudnn",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 74.01
+      },
+      {
+        "run_name": "p4.1p5b-sdpa-efficient.r0",
+        "entry": "1p5b-sdpa-efficient",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 74.01
+      },
+      {
+        "run_name": "p4.1p5b-sdpa-efficient.r1",
+        "entry": "1p5b-sdpa-efficient",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 74.01
+      },
+      {
+        "run_name": "p4.1p5b-sdpa-efficient.r2",
+        "entry": "1p5b-sdpa-efficient",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 74.01
+      },
+      {
+        "run_name": "p4.1p5b-seq4096.r0",
+        "entry": "1p5b-seq4096",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 74.01
+      },
+      {
+        "run_name": "p4.1p5b-seq4096.r1",
+        "entry": "1p5b-seq4096",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 74.01
+      },
+      {
+        "run_name": "p4.1p5b-seq4096.r2",
+        "entry": "1p5b-seq4096",
+        "gpus": 2,
+        "devices": [],
+        "status": "done:ok",
+        "returncode": null,
+        "start": null,
+        "seconds": null,
+        "overlapped_with": [],
+        "predicted_gib": 74.01
+      }
+    ]
+  },
+  "summary": {
+    "sweep": "p4",
+    "counts": {
+      "done:ok": 66
+    }
+  },
+  "notes": ""
+}

@@ -103,15 +103,20 @@ def build_model(cfg: TrainConfig, device: torch.device | None = None):
         # A local checkpoint saved already quantized (dlt.qlora.nf4 quantize) loads as it is.
         local = Path(cfg.model) / "config.json"
         prequantized = local.exists() and "quantization_config" in json.loads(local.read_text())
+        kw = (
+            {}
+            if prequantized
+            else {"quantization_config": bnb_config(torch.bfloat16 if cfg.backend == "fsdp1" else None)}
+        )
+        # passing quantization_config=None would override the saved checkpoint's own config and build an
+        # unquantized model (seen: "size mismatch ... [121110528, 1] vs [29568, 8192]"), so omit it
         model = AutoModelForCausalLM.from_pretrained(
             cfg.model,
             revision=cfg.resolved_revision(),
-            quantization_config=None
-            if prequantized
-            else bnb_config(torch.bfloat16 if cfg.backend == "fsdp1" else None),
             device_map={"": device.index if device is not None and device.type == "cuda" else 0},
             dtype=torch.bfloat16,
             attn_implementation=cfg.attn,
+            **kw,
         )
     elif cfg.init == "tiny":
         model = AutoModelForCausalLM.from_config(tiny_config(cfg.seq_len), attn_implementation=cfg.attn)
@@ -333,6 +338,7 @@ def wrap(model, cfg: TrainConfig, ctx: dlt_dist.DistCtx):
     from torch.distributed.device_mesh import init_device_mesh
     from torch.distributed.fsdp import MixedPrecisionPolicy, fully_shard
 
+    dlt_dist.ensure_group(ctx)  # a 1-GPU FSDP2 run started without torchrun still needs a process group
     mesh = init_device_mesh(ctx.device.type, (ctx.world_size,))
     mp = MixedPrecisionPolicy(param_dtype=torch.bfloat16, reduce_dtype=torch.float32)
     layers = list(model.model.layers)

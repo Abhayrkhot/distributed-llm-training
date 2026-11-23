@@ -578,3 +578,11 @@ def test_crash_during_eval_keeps_the_final_checkpoint(tmp_path, tokens):
     run(tmp_path, tokens, "evalcrash", *v, f"ckpt_dir={ck}", "crash_in_eval=true", expect_rc=1)
     assert (ck / "step_00000008" / "meta.json").exists()  # the run had finished: only the eval is lost
     assert run(tmp_path, tokens, "again", *v, f"ckpt_dir={ck}") is None  # the next link sees it complete
+
+
+def test_fsdp2_single_process_without_torchrun(tmp_path, tokens):
+    """The sweep starts 1-GPU runs with plain python; FSDP2 then needs a group of its own (Phase 3 bug)."""
+    single = run(tmp_path, tokens, "single")
+    fsdp = run(tmp_path, tokens, "fsdp2-1", "backend=fsdp2")
+    assert fsdp["summary"]["world_size"] == 1
+    np.testing.assert_allclose(fsdp["metrics"]["loss"], single["metrics"]["loss"], rtol=2e-3)

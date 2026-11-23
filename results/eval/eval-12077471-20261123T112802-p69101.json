@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "kind": "eval",
+  "run_id": "eval-12077471-20261123T112802-p69101",
+  "created_at": "2026-11-23T11:28:02+00:00",
+  "git_sha": "61a5901",
+  "lock_hash": "64701aa313f8",
+  "slurm": {
+    "job_id": "12077471",
+    "partition": "gpu-short",
+    "nodes": "d4052",
+    "gpus_on_node": "2",
+    "cpus_on_node": "16",
+    "host": "d4052"
+  },
+  "env": {
+    "python": "3.12.16",
+    "torch": "2.14.1+cu126",
+    "transformers": "5.24.0",
+    "peft": "0.22.0",
+    "bitsandbytes": "0.50.2",
+    "accelerate": "1.16.0",
+    "nvidia-nccl-cu12": "2.29.3",
+    "cuda_runtime": "12.6",
+    "nccl_runtime": "2.29.3"
+  },
+  "hardware": {
+    "gpu_name": "NVIDIA H200",
+    "gpu_count": 2,
+    "gpu_total_bytes": 150121545728,
+    "driver": "570.86.15"
+  },
+  "config": {
+    "cmd": "compare",
+    "a": "/scratch/$USER/dlt/phase5/nf4.npz",
+    "b": "/scratch/$USER/dlt/phase5/bf16.npz"
+  },
+  "metrics": {},
+  "summary": {
+    "name": "nf4-vs-bf16",
+    "a": "nf4.npz",
+    "b": "bf16.npz",
+    "examples": 200,
+    "positions": 301661,
+    "sql_positions": 12133,
+    "argmax_agreement_all": 0.93439,
+    "argmax_agreement_sql": 0.97808,
+    "ppl_all": {
+      "a": 2.7882,
+      "b": 2.76941
+    },
+    "ppl_sql": {
+      "a": 1.93673,
+      "b": 1.93049
+    },
+    "ppl_sql_gap": 0.00323,
+    "ppl_all_gap": 0.00678
+  },
+  "notes": ""
+}

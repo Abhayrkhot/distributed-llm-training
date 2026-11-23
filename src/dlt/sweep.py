@@ -87,7 +87,7 @@ def plan(spec: dict) -> list[Run]:
 def predicted_gib(run: Run) -> float | None:
     cfg = TrainConfig(**{k: coerce(k, v) for k, v in run.sets.items()})
     shape = QWEN25.get(cfg.model)
-    if shape is None or cfg.init == "tiny":
+    if shape is None or cfg.init == "tiny" or cfg.peft:  # the predictor covers full-parameter training
         return None
     accum = cfg.global_batch // (run.gpus * cfg.micro_batch)
     return predict_for_config(shape, cfg, run.gpus, accum)["total"] / GIB

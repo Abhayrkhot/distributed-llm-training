@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "kind": "bench",
+  "run_id": "bench-12077470-20261123T105038-p642928",
+  "created_at": "2026-11-23T10:50:38+00:00",
+  "git_sha": "61a5901",
+  "lock_hash": "64701aa313f8",
+  "slurm": {
+    "job_id": "12077470",
+    "partition": "gpu",
+    "nodes": "d4054",
+    "gpus_on_node": "1",
+    "cpus_on_node": "8",
+    "host": "d4054"
+  },
+  "env": {
+    "python": "3.12.16",
+    "torch": "2.14.1+cu126",
+    "transformers": "5.24.0",
+    "peft": "0.22.0",
+    "bitsandbytes": "0.50.2",
+    "accelerate": "1.16.0",
+    "nvidia-nccl-cu12": "2.29.3",
+    "cuda_runtime": "12.6",
+    "nccl_runtime": "2.29.3"
+  },
+  "hardware": {
+    "gpu_name": "NVIDIA H200",
+    "gpu_count": 1,
+    "gpu_total_bytes": 150121545728,
+    "driver": "570.86.15"
+  },
+  "config": {
+    "cmd": "quantize",
+    "data": "/scratch/$USER/dlt/data/bird",
+    "n": 200,
+    "schema": "ddl_rows",
+    "out": "/scratch/$USER/dlt/models/qwen2.5-72b-nf4"
+  },
+  "metrics": {},
+  "summary": {
+    "name": "nf4-quantize",
+    "model": "Qwen/Qwen2.5-72B",
+    "revision": "efba10c8e54e91e0d9570ab5f7b51a958474d4cb",
+    "quantize_on_load_s": 390.7,
+    "save_s": 73.4,
+    "reload_saved_s": 114.4,
+    "saved_gib": 38.39,
+    "param_storage_gib": 37.34,
+    "reloaded_param_tensors": 963,
+    "peak_gpu_gib_quantize": [
+      38.8
+    ],
+    "peak_gpu_gib_reload": [
+      66.15
+    ],
+    "host_rss_gib": 136.36,
+    "tokenizer": {
+      "special_ids": {
+        "<|endoftext|>": 151643,
+        "<|im_start|>": 151644,
+        "<|im_end|>": 151645
+      },
+      "special_ok": true,
+      "eos_token": "<|endoftext|>",
+      "roundtrip_texts": 200,
+      "roundtrip_failures": 0,
+      "vocab_matches_0p5b": true
+    }
+  },
+  "notes": ""
+}

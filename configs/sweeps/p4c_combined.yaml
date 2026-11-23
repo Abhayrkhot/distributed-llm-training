@@ -1,0 +1,25 @@
+# Phase 4, third round: the changes that paid off, combined, against fresh baselines (3 repeats each).
+# 7B FSDP2: torch.compile + parameters held across micro-batches + micro-batch 2 + cuDNN attention;
+# 1.5B DDP: torch.compile + micro-batch 8 + cuDNN attention.
+#   sbatch slurm/sweep_2gpu.sbatch configs/sweeps/p4c_combined.yaml
+name: p4c
+repeats: 3
+run_timeout_s: 1500
+base:
+  init: pretrained
+  data: ${DLT_HOME}/data/fineweb-edu-000/train.bin
+  seq_len: 2048
+  global_batch: 32
+  steps: 25
+  warmup_steps: 5
+  lr: 1.0e-5
+  timing_warmup: 5
+  profile_steps: 2
+  profile_start: 15
+runs:
+  - {name: 7b-base, gpus: 2, set: {model: Qwen/Qwen2.5-7B, backend: fsdp2, micro_batch: 1}}
+  - {name: 7b-best, gpus: 2, set: {model: Qwen/Qwen2.5-7B, backend: fsdp2, micro_batch: 2, compile: true, fsdp_hold_params: true, sdpa_backend: cudnn}}
+  - {name: 7b-best-flash, gpus: 2, set: {model: Qwen/Qwen2.5-7B, backend: fsdp2, micro_batch: 2, compile: true, fsdp_hold_params: true}}
+  - {name: 1p5b-base, gpus: 2, set: {model: Qwen/Qwen2.5-1.5B, backend: ddp, micro_batch: 4}}
+  - {name: 1p5b-best, gpus: 2, set: {model: Qwen/Qwen2.5-1.5B, backend: ddp, micro_batch: 8, compile: true, sdpa_backend: cudnn}}
+  - {name: 1p5b-best-flash, gpus: 2, set: {model: Qwen/Qwen2.5-1.5B, backend: ddp, micro_batch: 8, compile: true}}

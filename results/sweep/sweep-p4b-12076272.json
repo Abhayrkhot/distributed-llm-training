@@ -1,0 +1,395 @@
+{
+  "schema_version": 1,
+  "kind": "sweep",
+  "run_id": "sweep-p4b-12076272",
+  "created_at": "2026-11-23T11:18:30+00:00",
+  "git_sha": "d99b390",
+  "lock_hash": "64701aa313f8",
+  "slurm": {
+    "job_id": "12076272",
+    "partition": "gpu-short",
+    "nodes": "d4055",
+    "gpus_on_node": "2",
+    "cpus_on_node": "16",
+    "host": "d4055"
+  },
+  "env": {
+    "python": "3.12.16",
+    "torch": "2.14.1+cu126",
+    "transformers": "5.24.0",
+    "peft": "0.22.0",
+    "bitsandbytes": "0.50.2",
+    "accelerate": "1.16.0",
+    "nvidia-nccl-cu12": "2.29.3",
+    "cuda_runtime": "12.6",
+    "nccl_runtime": "2.29.3"
+  },
+  "hardware": {
+    "gpu_name": "NVIDIA H200",
+    "gpu_count": 2,
+    "gpu_total_bytes": 150121545728,
+    "driver": "570.86.15"
+  },
+  "config": {
+    "spec": {
+      "name": "p4b",
+      "repeats": 3,
+      "run_timeout_s": 1500,
+      "base": {
+        "init": "pretrained",
+        "data": "${DLT_HOME}/data/fineweb-edu-000/train.bin",
+        "seq_len": 2048,
+        "global_batch": 32,
+        "steps": 25,
+        "warmup_steps": 5,
+        "lr": 1e-05,
+        "timing_warmup": 5,
+        "profile_steps": 2,
+        "profile_start": 15
+      },
+      "runs": [
+        {
+          "name": "7b-base",
+          "gpus": 2,
+          "set": {
+            "model": "Qwen/Qwen2.5-7B",
+            "backend": "fsdp2",
+            "micro_batch": 1
+          }
+        },
+        {
+          "name": "7b-hold",
+          "gpus": 2,
+          "set": {
+            "model": "Qwen/Qwen2.5-7B",
+            "backend": "fsdp2",
+            "micro_batch": 1,
+            "fsdp_hold_params": true
+          }
+        },
+        {
+          "name": "7b-compile",
+          "gpus": 2,
+          "set": {
+            "model": "Qwen/Qwen2.5-7B",
+            "backend": "fsdp2",
+            "micro_batch": 1,
+            "compile": true
+          }
+        },
+        {
+          "name": "7b-compile-hold",
+          "gpus": 2,
+          "set": {
+            "model": "Qwen/Qwen2.5-7B",
+            "backend": "fsdp2",
+            "micro_batch": 1,
+            "compile": true,
+            "fsdp_hold_params": true
+          }
+        },
+        {
+          "name": "1p5b-base",
+          "gpus": 2,
+          "set": {
+            "model": "Qwen/Qwen2.5-1.5B",
+            "backend": "ddp",
+            "micro_batch": 4
+          }
+        },
+        {
+          "name": "1p5b-compile",
+          "gpus": 2,
+          "set": {
+            "model": "Qwen/Qwen2.5-1.5B",
+            "backend": "ddp",
+            "micro_batch": 4,
+            "compile": true
+          }
+        }
+      ]
+    },
+    "serial": false
+  },
+  "metrics": {
+    "runs": [
+      {
+        "run_name": "p4b.7b-base.r0",
+        "entry": "7b-base",
+        "gpus": 2,
+        "devices": [
+          "0",
+          "1"
+        ],
+        "status": "ok",
+        "returncode": 0,
+        "start": 1795430786.3,
+        "seconds": 196.0,
+        "overlapped_with": [],
+        "predicted_gib": 91.66
+      },
+      {
+        "run_name": "p4b.7b-base.r1",
+        "entry": "7b-base",
+        "gpus": 2,
+        "devices": [
+          "0",
+          "1"
+        ],
+        "status": "ok",
+        "returncode": 0,
+        "start": 1795430986.7,
+        "seconds": 140.0,
+        "overlapped_with": [],
+        "predicted_gib": 91.66
+      },
+      {
+        "run_name": "p4b.7b-base.r2",
+        "entry": "7b-base",
+        "gpus": 2,
+        "devices": [
+          "0",
+          "1"
+        ],
+        "status": "ok",
+        "returncode": 0,
+        "start": 1795431127.0,
+        "seconds": 144.0,
+        "overlapped_with": [],
+        "predicted_gib": 91.66
+      },
+      {
+        "run_name": "p4b.7b-hold.r0",
+        "entry": "7b-hold",
+        "gpus": 2,
+        "devices": [
+          "0",
+          "1"
+        ],
+        "status": "ok",
+        "returncode": 0,
+        "start": 1795431271.2,
+        "seconds": 123.0,
+        "overlapped_with": [],
+        "predicted_gib": 102.94
+      },
+      {
+        "run_name": "p4b.7b-hold.r1",
+        "entry": "7b-hold",
+        "gpus": 2,
+        "devices": [
+          "0",
+          "1"
+        ],
+        "status": "ok",
+        "returncode": 0,
+        "start": 1795431394.6,
+        "seconds": 130.5,
+        "overlapped_with": [],
+        "predicted_gib": 102.94
+      },
+      {
+        "run_name": "p4b.7b-hold.r2",
+        "entry": "7b-hold",
+        "gpus": 2,
+        "devices": [
+          "0",
+          "1"
+        ],
+        "status": "ok",
+        "returncode": 0,
+        "start": 1795431525.3,
+        "seconds": 119.5,
+        "overlapped_with": [],
+        "predicted_gib": 102.94
+      },
+      {
+        "run_name": "p4b.7b-compile.r0",
+        "entry": "7b-compile",
+        "gpus": 2,
+        "devices": [
+          "0",
+          "1"
+        ],
+        "status": "ok",
+        "returncode": 0,
+        "start": 1795431645.1,
+        "seconds": 156.5,
+        "overlapped_with": [],
+        "predicted_gib": 91.66
+      },
+      {
+        "run_name": "p4b.7b-compile.r1",
+        "entry": "7b-compile",
+        "gpus": 2,
+        "devices": [
+          "0",
+          "1"
+        ],
+        "status": "ok",
+        "returncode": 0,
+        "start": 1795431801.9,
+        "seconds": 133.5,
+        "overlapped_with": [],
+        "predicted_gib": 91.66
+      },
+      {
+        "run_name": "p4b.7b-compile.r2",
+        "entry": "7b-compile",
+        "gpus": 2,
+        "devices": [
+          "0",
+          "1"
+        ],
+        "status": "ok",
+        "returncode": 0,
+        "start": 1795431935.8,
+        "seconds": 136.0,
+        "overlapped_with": [],
+        "predicted_gib": 91.66
+      },
+      {
+        "run_name": "p4b.7b-compile-hold.r0",
+        "entry": "7b-compile-hold",
+        "gpus": 2,
+        "devices": [
+          "0",
+          "1"
+        ],
+        "status": "ok",
+        "returncode": 0,
+        "start": 1795432072.2,
+        "seconds": 113.5,
+        "overlapped_with": [],
+        "predicted_gib": 102.94
+      },
+      {
+        "run_name": "p4b.7b-compile-hold.r1",
+        "entry": "7b-compile-hold",
+        "gpus": 2,
+        "devices": [
+          "0",
+          "1"
+        ],
+        "status": "ok",
+        "returncode": 0,
+        "start": 1795432185.9,
+        "seconds": 109.5,
+        "overlapped_with": [],
+        "predicted_gib": 102.94
+      },
+      {
+        "run_name": "p4b.7b-compile-hold.r2",
+        "entry": "7b-compile-hold",
+        "gpus": 2,
+        "devices": [
+          "0",
+          "1"
+        ],
+        "status": "ok",
+        "returncode": 0,
+        "start": 1795432295.8,
+        "seconds": 115.5,
+        "overlapped_with": [],
+        "predicted_gib": 102.94
+      },
+      {
+        "run_name": "p4b.1p5b-base.r0",
+        "entry": "1p5b-base",
+        "gpus": 2,
+        "devices": [
+          "0",
+          "1"
+        ],
+        "status": "ok",
+        "returncode": 0,
+        "start": 1795432411.7,
+        "seconds": 61.5,
+        "overlapped_with": [],
+        "predicted_gib": 74.01
+      },
+      {
+        "run_name": "p4b.1p5b-base.r1",
+        "entry": "1p5b-base",
+        "gpus": 2,
+        "devices": [
+          "0",
+          "1"
+        ],
+        "status": "ok",
+        "returncode": 0,
+        "start": 1795432473.7,
+        "seconds": 45.5,
+        "overlapped_with": [],
+        "predicted_gib": 74.01
+      },
+      {
+        "run_name": "p4b.1p5b-base.r2",
+        "entry": "1p5b-base",
+        "gpus": 2,
+        "devices": [
+          "0",
+          "1"
+        ],
+        "status": "ok",
+        "returncode": 0,
+        "start": 1795432519.4,
+        "seconds": 43.5,
+        "overlapped_with": [],
+        "predicted_gib": 74.01
+      },
+      {
+        "run_name": "p4b.1p5b-compile.r0",
+        "entry": "1p5b-compile",
+        "gpus": 2,
+        "devices": [
+          "0",
+          "1"
+        ],
+        "status": "ok",
+        "returncode": 0,
+        "start": 1795432563.2,
+        "seconds": 53.5,
+        "overlapped_with": [],
+        "predicted_gib": 74.01
+      },
+      {
+        "run_name": "p4b.1p5b-compile.r1",
+        "entry": "1p5b-compile",
+        "gpus": 2,
+        "devices": [
+          "0",
+          "1"
+        ],
+        "status": "ok",
+        "returncode": 0,
+        "start": 1795432616.9,
+        "seconds": 43.5,
+        "overlapped_with": [],
+        "predicted_gib": 74.01
+      },
+      {
+        "run_name": "p4b.1p5b-compile.r2",
+        "entry": "1p5b-compile",
+        "gpus": 2,
+        "devices": [
+          "0",
+          "1"
+        ],
+        "status": "ok",
+        "returncode": 0,
+        "start": 1795432660.7,
+        "seconds": 49.0,
+        "overlapped_with": [],
+        "predicted_gib": 74.01
+      }
+    ]
+  },
+  "summary": {
+    "sweep": "p4b",
+    "counts": {
+      "ok": 18
+    }
+  },
+  "notes": ""
+}

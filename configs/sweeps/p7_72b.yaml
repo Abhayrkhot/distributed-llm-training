@@ -1,0 +1,34 @@
+# Phase 7: Qwen2.5-72B QLoRA on 2 H200s, replicated vs sharded, against 1 GPU. Same data order, global
+# batch (16 BIRD train questions), LoRA r=16 and activation checkpointing everywhere, 20 steps, so the
+# per-step losses are comparable across the three. Steps 13-14 run under the profiler (exposed comm).
+#   replicated  each rank holds the whole saved NF4 base (~38 GiB); DDP all-reduces the adapter gradients
+#   sharded     FSDP1 over an NF4 base stored as BF16 (quantized while loading the BF16 checkpoint), the
+#               documented FSDP-QLoRA setup: each rank holds half the base
+#   sbatch --mem=300G slurm/sweep_2gpu.sbatch configs/sweeps/p7_72b.yaml
+name: p7
+repeats: 1
+run_timeout_s: 5400
+base:
+  model: ${DLT_HOME}/models/qwen2.5-72b-nf4
+  quant: nf4
+  peft: lora
+  lora_r: 16
+  lora_alpha: 32
+  task: sft
+  data: ${DLT_HOME}/data/bird/train.jsonl
+  schemas: ${DLT_HOME}/data/bird/schemas.json
+  seq_len: 4096
+  global_batch: 16
+  micro_batch: 1
+  activation_checkpointing: true
+  steps: 20
+  lr: 1.0e-4
+  warmup_steps: 5
+  weight_decay: 0.0
+  timing_warmup: 3
+  profile_steps: 2
+  profile_start: 12
+runs:
+  - {name: 72b-single, gpus: 1, set: {backend: single, profile_steps: 0}}
+  - {name: 72b-ddp, gpus: 2, set: {backend: ddp}}
+  - {name: 72b-fsdp1, gpus: 2, set: {backend: fsdp1, model: Qwen/Qwen2.5-72B}}

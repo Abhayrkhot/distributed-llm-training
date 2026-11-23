@@ -42,6 +42,17 @@ def setup(device: str | None = None) -> DistCtx:
     return DistCtx(rank=rank, world_size=world, local_rank=local, device=dev)
 
 
+def ensure_group(ctx: DistCtx) -> None:
+    """A one-process group (in-memory store, no rendezvous) when none exists: FSDP2's device mesh needs a
+    process group even on a single rank, and a process started without torchrun has none."""
+    if dist.is_initialized():
+        return
+    if ctx.device.type == "cuda":
+        dist.init_process_group("nccl", store=dist.HashStore(), rank=0, world_size=1, device_id=ctx.device)
+    else:
+        dist.init_process_group("gloo", store=dist.HashStore(), rank=0, world_size=1)
+
+
 def teardown() -> None:
     if dist.is_initialized():
         dist.barrier()

@@ -224,8 +224,8 @@ def _p3_entries(prefix: str = "p3.") -> dict[str, list[dict]]:
         if not name.startswith(prefix):
             continue
         status = s.get("status", "ok")
-        if status == "ok" and s.get("stopped_by") is not None:
-            continue
+        if status == "failed" or (status == "ok" and s.get("stopped_by") is not None):
+            continue  # failed runs are logged (docs/RESULTS_LOG.md) but carry no measurements
         entry = name.split(".")[1]
         if status == "oom" and any(x["summary"].get("status") == "oom" for x in out.get(entry, [])):
             continue  # one OOM record per entry (each rank may write one)
@@ -460,14 +460,29 @@ def _idle(r: dict) -> float | None:
     return max(vals) if vals else None
 
 
+_ROUNDS = {
+    "p4": "one change at a time, configs/sweeps/p4_tuning.yaml",
+    "p4b": "the two fixes the Nsight profiles pointed to, configs/sweeps/p4b_fusion.yaml",
+    "p4c": "the changes that paid off, combined, configs/sweeps/p4c_combined.yaml",
+}
+
+
 def tuning_section() -> str:
-    entries = _p3_entries("p4.")
-    if not entries:
+    rounds = [(pre.rstrip("."), _p3_entries(pre)) for pre in ("p4.", "p4b.", "p4c.")]
+    rounds = [(label, e) for label, e in rounds if e]
+    if not rounds:
         return "_No Phase 4 runs yet._"
-    lines = [
+    head = (
         "Each change against its workload's baseline, both run 3 times in the same sweep. Change is the "
-        'median tokens/s against the baseline median; "noise" marks a change whose min-max range '
-        "overlaps the baseline's. GPU idle is time inside the profiled steps with no kernel running.",
+        'median tokens/s against the baseline median; "noise" marks a change whose min-max range overlaps '
+        "the baseline's. GPU idle is time inside the profiled steps with no kernel running."
+    )
+    return "\n\n".join([head] + [_tuning_round(label, entries) for label, entries in rounds])
+
+
+def _tuning_round(label: str, entries: dict) -> str:
+    lines = [
+        f"**Round {label}**: {_ROUNDS.get(label, '')}.",
         "",
         "| Run | Tokens/s | Change | MFU | Peak alloc (GiB) | Fwd / bwd / opt (s) | Exposed comm (s) | "
         "GPU idle (s) |",
