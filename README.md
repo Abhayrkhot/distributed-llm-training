@@ -268,7 +268,9 @@ Each change against its workload's baseline, both run 3 times in the same sweep.
 |---|---|---|---|---|---|---|---|
 | 7b-base | 14,384 (14,380-14,438) | baseline | 32.6% | 89.4 | 1.50/3.01/0.05 | 0.187 | 0.177 |
 | 7b-best | 22,720 (22,716-22,755) | +58.0% | 51.6% | 110.5 | 0.86/1.98/0.05 | 0.062 | 0.047 |
-| 7b-best-flash | 22,759 (22,752-22,765) | +58.2% | 51.6% | 110.5 | 0.86/1.97/0.05 | 0.063 | 0.046 |
+| 7b-best-flash | 22,765 (22,752-22,771) | +58.3% | 51.7% | 110.5 | 0.86/1.97/0.05 | 0.057 | 0.047 |
+| 1p5b-base | 64,295 (64,266-64,376) | baseline | 33.5% | 73.5 | 0.32/0.68/0.02 | 0.010 | 0.049 |
+| 1p5b-best | 87,527 | +36.1% | 45.7% | 107.4 | 0.25/0.48/0.02 | 0.008 | 0.017 |
 <!-- /gen:tuning -->
 
 <!-- gen:profile -->
@@ -307,7 +309,11 @@ Execution accuracy (EX): the predicted SQL returns the same set of rows as the g
 <!-- /gen:bird -->
 
 <!-- gen:qlora -->
-_No 72B QLoRA training runs yet._
+72B QLoRA training runs (one record per Slurm job). Tokens are real tokens (prompt + SQL, no padding); MFU uses the QLoRA convention 4N + 12LdT (PLAN.md 4.3).
+
+| Run | Backend x GPUs | r | Steps | Stopped by | Loss first -> last | Val loss | Tokens/s | MFU | Peak GPU (GiB) | Audit |
+|---|---|---|---|---|---|---|---|---|---|---|
+| p6-overfit | single x 1 | 16 | 0-120 | finished | 0.709 -> 0.000 | - | 944 | 28.7% | 47.6 | 210.5M LoRA params, base unchanged |
 <!-- /gen:qlora -->
 
 ## Fault tolerance (Phase 8)

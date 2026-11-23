@@ -60,8 +60,9 @@ def save(fig, name: str) -> None:
     print("wrote", (OUT / name).relative_to(ROOT))
 
 
-def chain_plot() -> None:
-    links = [r for r in load_records(ROOT / "results", "train") if r["summary"].get("run_name") == "p2-chain"]
+def chain_plot(run_name: str = "p2-chain", title: str = "", out: str = "p2_chain.png", w: int = 50) -> None:
+    """Training loss (and validation loss) of one run across the Slurm jobs it spanned."""
+    links = [r for r in load_records(ROOT / "results", "train") if r["summary"].get("run_name") == run_name]
     if not links:
         return
     fig, ax = plt.subplots(figsize=(8, 3.6))
@@ -70,7 +71,6 @@ def chain_plot() -> None:
         first = r["metrics"]["first_step"]
         steps += [first + i + 1 for i in range(len(r["metrics"]["loss"]))]
         losses += r["metrics"]["loss"]
-    w = 50
     smooth = [
         sum(losses[max(0, i - w + 1) : i + 1]) / len(losses[max(0, i - w + 1) : i + 1])
         for i in range(len(losses))
@@ -102,9 +102,64 @@ def chain_plot() -> None:
         )
     ax.set_xlabel("optimizer step")
     ax.set_ylabel("loss (nats/token)")
-    ax.set_title("One run across two Slurm jobs (Qwen2.5-0.5B, FSDP2, 2 H200s)")
+    ax.set_title(title or "One run across two Slurm jobs (Qwen2.5-0.5B, FSDP2, 2 H200s)")
     ax.legend(loc="upper right", ncol=2)
-    save(fig, "p2_chain.png")
+    save(fig, out)
+
+
+def bird_plot() -> None:
+    """BIRD execution accuracy with 95% bootstrap intervals, per model and split."""
+    evs = [r for r in load_records(ROOT / "results", "eval") if r["summary"].get("mode") in MODES]
+    latest = {}
+    for r in evs:
+        s = r["summary"]
+        if s["name"].endswith("-repro"):
+            continue
+        latest[(s["split"], s["mode"])] = s
+    if not latest:
+        return
+    splits = [sp for sp in ("val", "dev") if any(k[0] == sp for k in latest)]
+    fig, ax = plt.subplots(figsize=(6.5, 3.8))
+    width = 0.26
+    for j, mode in enumerate(MODES):
+        for i, sp in enumerate(splits):
+            s = latest.get((sp, mode))
+            if not s:
+                continue
+            x = i + (j - 1) * width
+            ex, (lo, hi) = 100 * s["ex"], (100 * s["ex_ci95"][0], 100 * s["ex_ci95"][1])
+            ax.bar(
+                x,
+                ex,
+                width * 0.92,
+                color=MODES[mode][1],
+                edgecolor=SURFACE,
+                linewidth=2,
+                label=MODES[mode][0] if i == 0 or (sp, mode) not in latest else None,
+            )
+            ax.plot([x, x], [lo, hi], color=INK, linewidth=1.2)
+            ax.text(x, hi + 1, f"{ex:.1f}", ha="center", color=MUTED, fontsize=8)
+    ax.set_xticks(
+        range(len(splits)),
+        [
+            f"{sp} ({next(s['questions'] for k, s in latest.items() if k[0] == sp)} questions)"
+            for sp in splits
+        ],
+    )
+    ax.set_ylabel("execution accuracy (%)")
+    ax.set_ylim(0, 100)
+    ax.grid(axis="x", visible=False)
+    ax.set_title("BIRD text-to-SQL, Qwen2.5-72B (NF4)")
+    handles = [plt.Rectangle((0, 0), 1, 1, color=c) for _, c in MODES.values()]
+    ax.legend(handles, [n for n, _ in MODES.values()], loc="upper left", fontsize=9)
+    save(fig, "p6_bird.png")
+
+
+MODES = {
+    "base": ("base, 3-shot", "#2a78d6"),
+    "finetuned": ("base + QLoRA adapter", "#eb6834"),
+    "instruct": ("Instruct, zero-shot (reference)", "#1baf7a"),
+}
 
 
 def mfu_plot() -> None:
@@ -211,6 +266,8 @@ def split_plot() -> None:
 
 if __name__ == "__main__":
     chain_plot()
+    chain_plot("p6-main", "72B QLoRA on BIRD train across chained Slurm jobs (1 H200)", "p6_main.png", w=10)
+    bird_plot()
     mfu_plot()
     memory_plot()
     split_plot()
