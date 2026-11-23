@@ -1,0 +1,225 @@
+{
+  "schema_version": 1,
+  "kind": "profile",
+  "run_id": "profile-p4-nsys-1p5b-base-rank0",
+  "created_at": "2026-11-23T07:17:43+00:00",
+  "git_sha": "a313c53",
+  "lock_hash": "64701aa313f8",
+  "slurm": {
+    "job_id": "12076198",
+    "partition": "short",
+    "nodes": "d0020",
+    "gpus_on_node": null,
+    "cpus_on_node": "4",
+    "host": "d0020"
+  },
+  "env": {
+    "python": "3.12.16",
+    "torch": "2.14.1+cu126",
+    "transformers": "5.24.0",
+    "peft": "0.22.0",
+    "bitsandbytes": "0.50.2",
+    "accelerate": "1.16.0",
+    "nvidia-nccl-cu12": "2.29.3",
+    "cuda_runtime": "12.6"
+  },
+  "hardware": {
+    "driver": null
+  },
+  "config": {
+    "name": "p4-nsys-1p5b-base",
+    "rank": 0,
+    "report": "p4-nsys-1p5b-base-rank0.nsys-rep"
+  },
+  "metrics": {
+    "top_kernels": [
+      {
+        "name": "ncclDevKernel_AllReduce_Sum_f32_RING_LL",
+        "category": "nccl",
+        "calls": 172,
+        "s_per_step": 0.2535
+      },
+      {
+        "name": "vectorized_elementwise_kernel",
+        "category": "elementwise",
+        "calls": 16644,
+        "s_per_step": 0.1945
+      },
+      {
+        "name": "nvjet_tst_256x128_64x4_1x2_h_bz_coopA_NNT",
+        "category": "gemm",
+        "calls": 1576,
+        "s_per_step": 0.13674
+      },
+      {
+        "name": "elementwise_kernel",
+        "category": "elementwise",
+        "calls": 7240,
+        "s_per_step": 0.10456
+      },
+      {
+        "name": "nvjet_tst_256x128_64x4_1x2_h_bz_coopA_TNT",
+        "category": "gemm",
+        "calls": 896,
+        "s_per_step": 0.09895
+      },
+      {
+        "name": "unrolled_elementwise_kernel",
+        "category": "elementwise",
+        "calls": 4320,
+        "s_per_step": 0.07462
+      },
+      {
+        "name": "nvjet_tst_192x192_64x3_2x1_v_bz_coopB_NTN",
+        "category": "gemm",
+        "calls": 448,
+        "s_per_step": 0.07296
+      },
+      {
+        "name": "flash_bwd_dq_dk_dv_loop_seqk_parallel_kernel",
+        "category": "attention",
+        "calls": 224,
+        "s_per_step": 0.06358
+      },
+      {
+        "name": "nvjet_tst_192x192_64x3_1x2_h_bz_coopB_NTN",
+        "category": "gemm",
+        "calls": 232,
+        "s_per_step": 0.05354
+      },
+      {
+        "name": "reduce_kernel",
+        "category": "reduce",
+        "calls": 2498,
+        "s_per_step": 0.02618
+      },
+      {
+        "name": "flash_fwd_kernel",
+        "category": "attention",
+        "calls": 224,
+        "s_per_step": 0.0242
+      },
+      {
+        "name": "cunn_SoftMaxBackward",
+        "category": "cross_entropy",
+        "calls": 8,
+        "s_per_step": 0.01979
+      },
+      {
+        "name": "nvjet_tst_192x192_64x4_2x1_v_bz_coopB_TNN",
+        "category": "gemm",
+        "calls": 8,
+        "s_per_step": 0.01969
+      },
+      {
+        "name": "cunn_SoftMaxForward",
+        "category": "cross_entropy",
+        "calls": 8,
+        "s_per_step": 0.01905
+      },
+      {
+        "name": "nvjet_tst_128x160_64x5_4x2_h_bz_NTT",
+        "category": "gemm",
+        "calls": 448,
+        "s_per_step": 0.01477
+      },
+      {
+        "name": "multi_tensor_apply_kernel",
+        "category": "optimizer",
+        "calls": 156,
+        "s_per_step": 0.01259
+      },
+      {
+        "name": "CatArrayBatchedCopy",
+        "category": "other",
+        "calls": 456,
+        "s_per_step": 0.00761
+      },
+      {
+        "name": "nvjet_tst_256x128_64x4_1x2_h_bz_coopA_bias_TNT",
+        "category": "gemm",
+        "calls": 224,
+        "s_per_step": 0.00596
+      },
+      {
+        "name": "nvjet_tst_96x64_64x8_1x2_h_bz_splitK_NTN",
+        "category": "gemm",
+        "calls": 448,
+        "s_per_step": 0.00436
+      },
+      {
+        "name": "multi_tensor_apply_kernel",
+        "category": "foreach",
+        "calls": 158,
+        "s_per_step": 0.00348
+      },
+      {
+        "name": "flash_bwd_dot_do_o_kernel",
+        "category": "attention",
+        "calls": 224,
+        "s_per_step": 0.00311
+      },
+      {
+        "name": "nvjet_tst_128x128_64x6_2x1_v_bz_bias_TNT",
+        "category": "gemm",
+        "calls": 448,
+        "s_per_step": 0.0028
+      },
+      {
+        "name": "flash_bwd_convert_dq_kernel",
+        "category": "attention",
+        "calls": 224,
+        "s_per_step": 0.00278
+      },
+      {
+        "name": "multi_tensor_apply_kernel",
+        "category": "grad_clip",
+        "calls": 150,
+        "s_per_step": 0.00182
+      },
+      {
+        "name": "splitKreduce_kernel",
+        "category": "gemm",
+        "calls": 448,
+        "s_per_step": 0.00091
+      }
+    ]
+  },
+  "summary": {
+    "name": "p4-nsys-1p5b-base",
+    "rank": 0,
+    "steps": 2,
+    "kernels": 38063,
+    "kernel_s_per_step": {
+      "attention": 0.09368,
+      "cross_entropy": 0.03898,
+      "elementwise": 0.37369,
+      "foreach": 0.00348,
+      "gemm": 0.41067,
+      "grad_clip": 0.00183,
+      "nccl": 0.25357,
+      "optimizer": 0.01259,
+      "other": 0.0084,
+      "reduce": 0.02618
+    },
+    "kernel_share": {
+      "attention": 0.0766,
+      "cross_entropy": 0.0319,
+      "elementwise": 0.3055,
+      "foreach": 0.0028,
+      "gemm": 0.3358,
+      "grad_clip": 0.0015,
+      "nccl": 0.2073,
+      "optimizer": 0.0103,
+      "other": 0.0069,
+      "reduce": 0.0214
+    },
+    "memcpy_s_per_step": 0.01071,
+    "compute_s": 0.96949,
+    "comm_s": 0.25357,
+    "exposed_comm_s": 0.11878,
+    "overlapped_frac": 0.53159,
+    "gpu_idle_s": 0.04329
+  },
+  "notes": ""
+}

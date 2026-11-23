@@ -183,6 +183,8 @@ Over 54 finished runs: median absolute error 1.1%, worst 4.0% (at run time: medi
 | 1p5b-single-ac | 42.0 | 44.5 | 41.2 | +2.0% | fit (predicted fit) |
 | 3b-single-ac | 56.5 | 61.6 | 56.0 | +0.9% | fit (predicted fit) |
 | 7b-single-ac | 128.1 | 132.1 | 129.2 | -0.9% | fit (predicted fit) |
+
+Out of sample, on the 66 Phase 4 runs (configurations the corrections never saw: larger micro-batches, chunked loss, longer sequences, other kernels): median absolute error 1.6%, worst 7.1% (worst: 1p5b-bucket-view).
 <!-- /gen:memory -->
 
 ### Activation checkpointing
@@ -206,11 +208,41 @@ Qwen2.5-7B with FSDP2 and Qwen2.5-1.5B with DDP, both on 2 H200s, one change at 
 ([slurm/nsys_2gpu.sbatch](slurm/nsys_2gpu.sbatch)).
 
 <!-- gen:tuning -->
-_No Phase 4 runs yet._
+Each change against its workload's baseline, both run 3 times in the same sweep. Change is the median tokens/s against the baseline median; "noise" marks a change whose min-max range overlaps the baseline's. GPU idle is time inside the profiled steps with no kernel running.
+
+| Run | Tokens/s | Change | MFU | Peak alloc (GiB) | Fwd / bwd / opt (s) | Exposed comm (s) | GPU idle (s) |
+|---|---|---|---|---|---|---|---|
+| 7b-base | 14,570 (14,541-14,570) | baseline | 33.1% | 89.4 | 1.49/2.96/0.05 | 0.146 | 0.178 |
+| 7b-no-reshard | 15,996 (15,968-16,001) | +9.8% | 36.3% | 101.6 | 1.49/2.57/0.05 | 0.140 | 0.154 |
+| 7b-prefetch2 | 14,674 (14,644-14,674) | +0.7% | 33.3% | 89.4 | 1.48/2.94/0.05 | 0.164 | 0.170 |
+| 7b-micro2 | 17,527 (17,526-17,540) | +20.3% | 39.8% | 105.4 | 1.21/2.48/0.05 | 0.069 | 0.108 |
+| 7b-micro2-chunk | 17,020 (17,020-17,025) | +16.8% | 38.6% | 100.8 | 1.21/2.60/0.05 | 0.070 | 0.116 |
+| 7b-chunk | 14,287 (14,276-14,310) | -1.9% | 32.4% | 88.8 | 1.49/3.05/0.05 | 0.177 | 0.182 |
+| 7b-sdpa-flash | 14,640 (14,623-14,648) | +0.5% | 33.2% | 89.4 | 1.48/2.94/0.05 | 0.174 | 0.179 |
+| 7b-sdpa-cudnn | 14,950 (14,923-14,967) | +2.6% | 33.9% | 89.4 | 1.45/2.89/0.05 | 0.164 | 0.167 |
+| 7b-sdpa-efficient | 14,009 (14,002-14,013) | -3.8% | 31.8% | 89.4 | 1.51/3.12/0.05 | 0.168 | 0.176 |
+| 7b-ac-every2 | 13,529 (13,522-13,552) | -7.1% | 30.7% | 83.5 | 1.48/3.32/0.05 | 0.185 | 0.231 |
+| 7b-seq4096 | 16,875 (16,872-16,885) | +15.8% | 40.4% | 105.4 | 1.25/2.59/0.05 | 0.071 | 0.112 |
+| 1p5b-base | 65,074 (64,993-65,178) | baseline | 34.0% | 73.5 | 0.31/0.67/0.02 | 0.010 | 0.049 |
+| 1p5b-bucket5 | 65,212 (65,080-65,266) | +0.2% (noise) | 34.0% | 73.5 | 0.31/0.67/0.02 | 0.009 | 0.046 |
+| 1p5b-bucket100 | 65,268 (65,102-65,304) | +0.3% (noise) | 34.1% | 73.5 | 0.31/0.67/0.02 | 0.010 | 0.046 |
+| 1p5b-bucket-view | 65,373 (65,212-65,402) | +0.5% | 34.1% | 73.5 | 0.31/0.67/0.02 | 0.008 | 0.045 |
+| 1p5b-micro8 | 68,230 (68,155-68,274) | +4.8% | 35.6% | 115.2 | 0.30/0.64/0.02 | 0.009 | 0.027 |
+| 1p5b-micro8-chunk | 64,248 (64,209-64,274) | -1.3% | 33.5% | 90.3 | 0.30/0.70/0.02 | 0.009 | 0.028 |
+| 1p5b-chunk | 61,351 (61,343-61,382) | -5.7% | 32.0% | 64.7 | 0.32/0.73/0.02 | 0.009 | 0.049 |
+| 1p5b-sdpa-flash | 65,108 (65,102-65,214) | +0.1% (noise) | 34.0% | 73.5 | 0.31/0.67/0.02 | 0.008 | 0.046 |
+| 1p5b-sdpa-cudnn | 67,252 (67,198-67,288) | +3.3% | 35.1% | 73.5 | 0.30/0.65/0.02 | 0.010 | 0.049 |
+| 1p5b-sdpa-efficient | 59,894 (59,805-60,084) | -8.0% | 31.2% | 73.5 | 0.33/0.74/0.02 | 0.008 | 0.046 |
+| 1p5b-seq4096 | 60,697 (60,611-60,721) | -6.7% | 34.9% | 73.5 | 0.34/0.73/0.02 | 0.010 | 0.048 |
 <!-- /gen:tuning -->
 
 <!-- gen:profile -->
-_No Nsight Systems profiles yet._
+Nsight Systems, rank 0, GPU kernel time per optimizer step by category (share of kernel time), over the captured steps ([scripts/nsys_summary.py](scripts/nsys_summary.py)). NCCL kernel time includes time spent waiting for the other rank.
+
+| Run | GEMM | attention | NCCL | elementwise + reduce | cross-entropy | optimizer + clip | FSDP2 copies | other | Exposed comm (s) | GPU idle (s) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| p4-nsys-7b-base | 2.128 (35%) | 0.276 (4%) | 1.524 (25%) | 1.344 (22%) | 0.040 (1%) | 0.558 (9%) | 0.246 (4%) | 0.025 (0%) | 0.297 | 0.156 |
+| p4-nsys-1p5b-base | 0.411 (34%) | 0.094 (8%) | 0.254 (21%) | 0.400 (33%) | 0.039 (3%) | 0.018 (1%) | 0.000 (0%) | 0.008 (1%) | 0.119 | 0.043 |
 <!-- /gen:profile -->
 
 ## Qwen2.5-72B in NF4 (Phase 5)

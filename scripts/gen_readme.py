@@ -395,6 +395,21 @@ def memory_section() -> str:
             f"| {entry} | {now:.1f} | {_med(then):.1f} | {_med(meas):.1f} | {100 * _med(e):+.1f}% | "
             f"fit (predicted {'fit' if now <= H200_GIB else 'OOM'}) |"
         )
+    p4 = [r for v in _p3_entries("p4.").values() for r in _ok(v)]
+    if p4:
+        e4 = [
+            (_predict_now(r) - max(r["summary"]["peak_alloc_gib_by_rank"]))
+            / max(r["summary"]["peak_alloc_gib_by_rank"])
+            for r in p4
+        ]
+        worst = max(
+            zip((abs(x) for x in e4), (r["summary"]["run_name"].split(".")[1] for r in p4), strict=True)
+        )
+        lines.append(
+            f"\nOut of sample, on the {len(p4)} Phase 4 runs (configurations the corrections never saw: "
+            f"larger micro-batches, chunked loss, longer sequences, other kernels): {_stats(e4)} "
+            f"(worst: {worst[1]})."
+        )
     if now_errs:
         lines.insert(
             1,
