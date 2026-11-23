@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -28,7 +29,15 @@ class TrainConfig:
     backend: str = "ddp"  # single | ddp | fsdp2
     attn: str = "sdpa"  # sdpa | eager (eager is deterministic)
     activation_checkpointing: bool = False
+    ac_every: int = 1  # with activation_checkpointing: checkpoint decoder layers 0, k, 2k, ...
     sharded_load: bool = True  # FSDP2 + pretrained: meta init, each rank reads only its shard
+    sdpa_backend: str = "auto"  # auto | flash | efficient | cudnn | math (attn=sdpa only)
+    loss_chunk: int = 0  # >0: lm_head + cross-entropy over this many tokens at a time (no full logits)
+    # distributed
+    ddp_bucket_mb: float = 25.0  # DDP gradient bucket size
+    ddp_bucket_view: bool = False  # DDP gradient_as_bucket_view (gradients live in the buckets)
+    reshard_after_forward: bool = True  # FSDP2: free each layer's gathered parameters after forward
+    fsdp_prefetch: int = 0  # FSDP2: explicitly prefetch this many layers ahead (0: FSDP2's default)
     # data
     data: str = ""  # train.bin (flat uint32 tokens)
     seq_len: int = 2048
@@ -65,6 +74,9 @@ class TrainConfig:
     profile_steps: int = 0  # >0: profile this many steps for compute / exposed communication
     profile_start: int = 5  # first profiled step, counted from the run's first step
     profile_dir: str = ""  # keep the chrome traces here (default: analyzed, then deleted)
+    profiler: str = "torch"  # torch: PyTorch Profiler, analyzed in-process | nsys: cudaProfilerApi range
+    nvtx: bool = False  # NVTX ranges around forward, backward and optimizer (for Nsight Systems)
+    alloc_conf: str = ""  # PYTORCH_CUDA_ALLOC_CONF for this run, e.g. expandable_segments:True
 
     def resolved_revision(self) -> str | None:
         return self.revision or PINNED.get(self.model)
@@ -78,6 +90,12 @@ class TrainConfig:
             raise ValueError("data (path to train.bin) is required")
         if self.accum_sync not in ("last", "every"):
             raise ValueError("accum_sync must be last or every")
+        if self.sdpa_backend not in ("auto", "flash", "efficient", "cudnn", "math"):
+            raise ValueError("sdpa_backend must be auto, flash, efficient, cudnn or math")
+        if self.profiler not in ("torch", "nsys"):
+            raise ValueError("profiler must be torch or nsys")
+        if self.ac_every < 1 or self.loss_chunk < 0 or self.fsdp_prefetch < 0:
+            raise ValueError("ac_every >= 1, loss_chunk >= 0 and fsdp_prefetch >= 0")
         if self.eval_samples < 0 or (self.eval_samples and not self.val_data):
             raise ValueError("eval_samples needs val_data and must be >= 0")
 
@@ -123,5 +141,7 @@ def parse(argv: list[str] | None = None) -> TrainConfig:
     for item in args.set:
         k, _, v = item.partition("=")
         setattr(cfg, k, coerce(k, v))
+    for k in ("data", "val_data", "ckpt_dir", "profile_dir"):  # '${DLT_HOME}/...' expands inside the job
+        setattr(cfg, k, os.path.expandvars(getattr(cfg, k)))
     cfg.validate()
     return cfg

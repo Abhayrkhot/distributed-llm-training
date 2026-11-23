@@ -1,0 +1,14 @@
+# Phase 4 profiling baseline: the p4 sweep's 1p5b-base entry, for slurm/nsys_2gpu.sbatch.
+model: Qwen/Qwen2.5-1.5B
+init: pretrained
+backend: ddp
+data: ${DLT_HOME}/data/fineweb-edu-000/train.bin
+seq_len: 2048
+global_batch: 32
+micro_batch: 4
+steps: 12
+warmup_steps: 5
+lr: 1.0e-5
+timing_warmup: 5
+profile_steps: 2
+profile_start: 8

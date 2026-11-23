@@ -30,7 +30,9 @@ def test_fsdp2_shards_states_and_no_sync_costs_a_full_fp32_gradient():
     one, two = predict(s, **kw(world=1)), predict(s, **kw(world=2))
     assert two["adam_fp32"] == pytest.approx(one["adam_fp32"] / 2)
     assert two["fsdp_unsharded_grads"] == 4 * s.total_params()
-    assert "fsdp_unsharded_grads" not in predict(s, **kw(accum_sync="every"))
+    assert "grads_fp32" not in two  # sharded grads are freed until the last micro-batch's reduce-scatter
+    every = predict(s, **kw(accum_sync="every"))
+    assert "fsdp_unsharded_grads" not in every and every["grads_fp32"] == 2 * s.total_params()
     assert "fsdp_unsharded_grads" not in predict(s, **kw(accum=1))
 
 
@@ -77,3 +79,42 @@ def test_predictor_within_10_percent_of_measured_parity_runs():
         )["total"]
         measured = max(s["peak_alloc_gib_by_rank"]) * GIB
         assert abs(pred - measured) / measured < 0.10, (s["run_name"], pred / GIB, measured / GIB)
+
+
+def test_phase4_knob_terms():
+    s = QWEN25["Qwen/Qwen2.5-1.5B"]
+    ddp = dict(backend="ddp", world=2, seq_len=2048, micro_batch=4, accum=4)
+    assert "ddp_buckets" not in predict(s, **ddp, ddp_bucket_view=True)
+    full, chunk = predict(s, **ddp), predict(s, **ddp, loss_chunk=1024)
+    assert chunk["logits"] == full["logits"] / 8
+    ac1 = predict(s, **ddp, activation_checkpointing=True)["activations"]
+    ac2 = predict(s, **ddp, activation_checkpointing=True, ac_every=2)["activations"]
+    off = predict(s, **ddp)["activations"]
+    assert ac1 < ac2 < off
+    f = dict(backend="fsdp2", world=2, seq_len=2048, micro_batch=4, accum=4)
+    assert (
+        predict(s, **f, reshard_after_forward=False)["fsdp_gathered_bf16"]
+        > predict(s, **f)["fsdp_gathered_bf16"]
+    )
+
+
+def test_current_predictor_within_5_percent_of_valid_phase3_runs():
+    """Regression guard: every finished Phase 3 run (invalid records excluded) against today's model."""
+    from types import SimpleNamespace
+
+    from dlt.metrics.memory import predict_for_config
+    from dlt.results import load_records
+
+    runs = [
+        r
+        for r in load_records(ROOT / "results", "train")
+        if r["summary"].get("run_name", "").startswith("p3.")
+        and r["summary"].get("status") == "ok"
+        and r["summary"].get("stopped_by") is None
+    ]
+    assert len(runs) >= 40
+    for r in runs:
+        s, c = r["summary"], SimpleNamespace(**r["config"])
+        pred = predict_for_config(QWEN25[c.model], c, s["world_size"], s["accum_steps"])["total"] / GIB
+        measured = max(s["peak_alloc_gib_by_rank"])
+        assert abs(pred - measured) / measured < 0.05, (s["run_name"], pred, measured)

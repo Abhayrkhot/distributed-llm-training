@@ -35,7 +35,7 @@ from pathlib import Path
 import yaml
 
 from dlt.metrics.flops import QWEN25
-from dlt.metrics.memory import predict_gib
+from dlt.metrics.memory import GIB, predict_for_config
 from dlt.results import load_records, new_record, write_record
 from dlt.train.config import TrainConfig, coerce
 
@@ -90,17 +90,7 @@ def predicted_gib(run: Run) -> float | None:
     if shape is None or cfg.init == "tiny":
         return None
     accum = cfg.global_batch // (run.gpus * cfg.micro_batch)
-    backend = "single" if run.gpus == 1 and cfg.backend == "ddp" else cfg.backend
-    return predict_gib(
-        shape,
-        backend=backend,
-        world=run.gpus,
-        seq_len=cfg.seq_len,
-        micro_batch=cfg.micro_batch,
-        accum=accum,
-        activation_checkpointing=cfg.activation_checkpointing,
-        accum_sync=cfg.accum_sync,
-    )
+    return predict_for_config(shape, cfg, run.gpus, accum)["total"] / GIB
 
 
 def _fmt(v) -> str:

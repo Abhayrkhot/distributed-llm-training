@@ -64,11 +64,16 @@ def comm_overlap(kernels: list[tuple[str, float, float]], n_steps: int = 1) -> d
     """Per-step seconds of compute, communication and exposed communication (inputs in microseconds)."""
     comm = merge([(s, e) for n, s, e in kernels if is_comm(n)])
     comp = merge([(s, e) for n, s, e in kernels if not is_comm(n)])
+    busy = merge([(s, e) for _, s, e in kernels])
     exposed = minus(comm, comp)
     c = total(comm)
+    span = (busy[-1][1] - busy[0][0]) if busy else 0.0
     return {
         "compute_s": total(comp) / 1e6 / n_steps,
         "comm_s": c / 1e6 / n_steps,
         "exposed_comm_s": exposed / 1e6 / n_steps,
         "overlapped_frac": (1 - exposed / c) if c else None,
+        # no kernel running at all between the first and last kernel of the window: CPU-side gaps
+        # (launch overhead, host-to-device copies from pageable memory, the per-step loss sync)
+        "gpu_idle_s": (span - total(busy)) / 1e6 / n_steps,
     }

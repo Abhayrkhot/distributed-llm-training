@@ -1,0 +1,14 @@
+{
+  "about": "Records that are kept but excluded from every table and treated as not run (dlt.results.load_invalid).",
+  "run_ids": {
+    "train-12073550-20261123T035224-p1732379": "activation_checkpointing was silently off: from_pretrained returns the model in eval mode and transformers checkpoints only in train mode (fixed in the engine after Phase 3); this run measured the no-checkpointing configuration",
+    "train-12073550-20261123T035323-p1738175": "activation_checkpointing was silently off: from_pretrained returns the model in eval mode and transformers checkpoints only in train mode (fixed in the engine after Phase 3); this run measured the no-checkpointing configuration",
+    "train-12073550-20261123T035323-p1738176": "activation_checkpointing was silently off: from_pretrained returns the model in eval mode and transformers checkpoints only in train mode (fixed in the engine after Phase 3); this run measured the no-checkpointing configuration",
+    "train-12073550-20261123T040332-p1784639": "activation_checkpointing was silently off: from_pretrained returns the model in eval mode and transformers checkpoints only in train mode (fixed in the engine after Phase 3); this run measured the no-checkpointing configuration",
+    "train-12073550-20261123T040519-p1797478": "activation_checkpointing was silently off: from_pretrained returns the model in eval mode and transformers checkpoints only in train mode (fixed in the engine after Phase 3); this run measured the no-checkpointing configuration",
+    "train-12073550-20261123T040520-p1797477": "activation_checkpointing was silently off: from_pretrained returns the model in eval mode and transformers checkpoints only in train mode (fixed in the engine after Phase 3); this run measured the no-checkpointing configuration",
+    "train-12073550-20261123T041712-p1911397-rank0": "activation_checkpointing was silently off: from_pretrained returns the model in eval mode and transformers checkpoints only in train mode (fixed in the engine after Phase 3); this run measured the no-checkpointing configuration",
+    "train-12073550-20261123T041712-p1911398-rank0": "activation_checkpointing was silently off: from_pretrained returns the model in eval mode and transformers checkpoints only in train mode (fixed in the engine after Phase 3); this run measured the no-checkpointing configuration",
+    "train-12073550-20261123T041736-p1916074-rank0": "activation_checkpointing was silently off: from_pretrained returns the model in eval mode and transformers checkpoints only in train mode (fixed in the engine after Phase 3); this run measured the no-checkpointing configuration"
+  }
+}

@@ -16,6 +16,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
+from dlt.metrics.flops import QWEN25  # noqa: E402
+from dlt.metrics.memory import VERSION as PREDICTOR_VERSION  # noqa: E402
+from dlt.metrics.memory import predict_for_config  # noqa: E402
 from dlt.results import load_records  # noqa: E402
 
 
@@ -331,6 +334,21 @@ def scaling_section() -> str:
     return "\n".join(lines)
 
 
+def _predict_now(r: dict) -> float:
+    """Today's predictor (dlt.metrics.memory.VERSION) for the config a record ran."""
+    from types import SimpleNamespace
+
+    s, c = r["summary"], SimpleNamespace(**r["config"])
+    world = s["world_size"]
+    accum = s.get("accum_steps") or c.global_batch // (world * c.micro_batch)
+    return predict_for_config(QWEN25[c.model], c, world, accum)["total"] / 2**30
+
+
+def _stats(errs: list[float]) -> str:
+    a = sorted(abs(x) for x in errs)
+    return f"median absolute error {100 * _med(a):.1f}%, worst {100 * a[-1]:.1f}%"
+
+
 def memory_section() -> str:
     entries = _p3_entries()
     if not entries:
@@ -338,40 +356,42 @@ def memory_section() -> str:
     lines = [
         "Predicted peak allocated memory per rank (dlt.metrics.memory, analytical, not fitted) against the "
         f"measured `max_memory_allocated` (max over ranks), for every run including OOMs. Limit: {H200_GIB} "
-        "GiB visible per H200.",
+        f'GiB visible per H200. "Now" is predictor version {PREDICTOR_VERSION}; "at run time" is the '
+        "version the run recorded (version 1 double-counted FSDP2 gradients under no-sync accumulation).",
         "",
-        "| Run | Predicted (GiB) | Measured (GiB) | Error | Outcome |",
-        "|---|---|---|---|---|",
+        "| Run | Predicted now (GiB) | At run time (GiB) | Measured (GiB) | Error now | Outcome |",
+        "|---|---|---|---|---|---|",
     ]
-    errs, right, total = [], 0, 0
+    now_errs, then_errs, right, total = [], [], 0, 0
     for entry, recs in entries.items():
         s = recs[0]["summary"]
+        now = _predict_now(recs[0])
         if s.get("status") == "oom":
-            pred = s["predicted_gib"]["total"]
-            phase = s.get("phase")
             total += 1
-            right += pred > H200_GIB
+            right += now > H200_GIB
             lines.append(
-                f"| {entry} | {pred:.1f} | OOM during {phase} | - | "
-                f"predicted {'OOM' if pred > H200_GIB else 'fit'} |"
+                f"| {entry} | {now:.1f} | {s['predicted_gib']['total']:.1f} | "
+                f"OOM during {s.get('phase')} | - | "
+                f"predicted {'OOM' if now > H200_GIB else 'fit'} |"
             )
             continue
-        preds = [r["summary"]["predicted_gib"] for r in recs]
         meas = [max(r["summary"]["peak_alloc_gib_by_rank"]) for r in recs]
-        e = [(p - m) / m for p, m in zip(preds, meas, strict=True)]
-        errs += e
+        then = [r["summary"]["predicted_gib"] for r in recs]
+        e = [(now - m) / m for m in meas]
+        now_errs += e
+        then_errs += [(p - m) / m for p, m in zip(then, meas, strict=True)]
         total += 1
-        right += preds[0] <= H200_GIB
+        right += now <= H200_GIB
         lines.append(
-            f"| {entry} | {_med(preds):.1f} | {_med(meas):.1f} | {100 * _med(e):+.1f}% | "
-            f"fit (predicted {'fit' if preds[0] <= H200_GIB else 'OOM'}) |"
+            f"| {entry} | {now:.1f} | {_med(then):.1f} | {_med(meas):.1f} | {100 * _med(e):+.1f}% | "
+            f"fit (predicted {'fit' if now <= H200_GIB else 'OOM'}) |"
         )
-    if errs:
-        abs_e = sorted(abs(x) for x in errs)
+    if now_errs:
         lines.insert(
             1,
-            f"\nOver {len(errs)} finished runs: median absolute error {100 * _med(abs_e):.1f}%, worst "
-            f"{100 * abs_e[-1]:.1f}%; fit vs OOM predicted correctly for {right} of {total} configurations.",
+            f"\nOver {len(now_errs)} finished runs: {_stats(now_errs)} "
+            f"(at run time: {_stats(then_errs)}); fit "
+            f"vs OOM predicted correctly for {right} of {total} configurations.",
         )
     return "\n".join(lines)
 
@@ -410,6 +430,87 @@ def ac_section() -> str:
     return "\n".join(lines)
 
 
+def _idle(r: dict) -> float | None:
+    c = r["summary"].get("comm_by_rank")
+    vals = [x["gpu_idle_s"] for x in c if "gpu_idle_s" in x] if c else []
+    return max(vals) if vals else None
+
+
+def tuning_section() -> str:
+    entries = _p3_entries("p4.")
+    if not entries:
+        return "_No Phase 4 runs yet._"
+    lines = [
+        "Each change against its workload's baseline, both run 3 times in the same sweep. Change is the "
+        'median tokens/s against the baseline median; "noise" marks a change whose min-max range '
+        "overlaps the baseline's. GPU idle is time inside the profiled steps with no kernel running.",
+        "",
+        "| Run | Tokens/s | Change | MFU | Peak alloc (GiB) | Fwd / bwd / opt (s) | Exposed comm (s) | "
+        "GPU idle (s) |",
+        "|---|---|---|---|---|---|---|---|",
+    ]
+    for workload in dict.fromkeys(e.split("-")[0] for e in entries):
+        base = _ok(entries.get(f"{workload}-base", []))
+        if not base:
+            continue
+        bt = [r["summary"]["tokens_per_s"] for r in base]
+        for entry, recs in entries.items():
+            if entry.split("-")[0] != workload:
+                continue
+            ok = _ok(recs)
+            if not ok:
+                s = recs[0]["summary"]
+                lines.append(f"| {entry} | OOM during {s.get('phase')} | - | - | - | - | - | - |")
+                continue
+            t = [r["summary"]["tokens_per_s"] for r in ok]
+            if entry.endswith("-base"):
+                change = "baseline"
+            else:
+                d = 100 * (_med(t) - _med(bt)) / _med(bt)
+                noise = max(min(t), min(bt)) <= min(max(t), max(bt))
+                change = f"{d:+.1f}%" + (" (noise)" if noise else "")
+            split = "/".join(
+                f"{_med([r['summary'][k] for r in ok]):.2f}"
+                for k in ("fwd_s_median", "bwd_s_median", "opt_s_median")
+            )
+            exp = [x for r in ok if (x := _exposed(r)) is not None]
+            idle = [x for r in ok if (x := _idle(r)) is not None]
+            mfu = _med([100 * r["summary"]["mfu"] for r in ok])
+            peak = _med([max(r["summary"]["peak_alloc_gib_by_rank"]) for r in ok])
+            exp_txt = f"{_med(exp):.3f}" if exp else "-"
+            idle_txt = f"{_med(idle):.3f}" if idle else "-"
+            lines.append(
+                f"| {entry} | {_spread(t, ',.0f')} | {change} | {mfu:.1f}% | {peak:.1f} | {split} | "
+                f"{exp_txt} | {idle_txt} |"
+            )
+    return "\n".join(lines)
+
+
+def profile_section() -> str:
+    recs = [r for r in load_records(ROOT / "results", "profile") if r["summary"].get("rank") == 0]
+    if not recs:
+        return "_No Nsight Systems profiles yet._"
+    cats = ["gemm", "attention", "cross_entropy", "optimizer", "nccl", "other"]
+    lines = [
+        "Nsight Systems, rank 0, GPU kernel time per optimizer step by category (share of kernel time), "
+        "over the captured steps ([scripts/nsys_summary.py](scripts/nsys_summary.py)).",
+        "",
+        "| Run | " + " | ".join(cats) + " | Exposed comm (s) | GPU idle (s) |",
+        "|---|" + "---|" * (len(cats) + 2),
+    ]
+    for r in recs:
+        s = r["summary"]
+        cells = [
+            f"{s['kernel_s_per_step'].get(c, 0):.3f} ({100 * s['kernel_share'].get(c, 0):.0f}%)" for c in cats
+        ]
+        lines.append(
+            f"| {s['name']} | "
+            + " | ".join(cells)
+            + f" | {s['exposed_comm_s']:.3f} | {s['gpu_idle_s']:.3f} |"
+        )
+    return "\n".join(lines)
+
+
 SECTIONS = {
     "hardware": hardware_section,
     "nccl": nccl_section,
@@ -420,6 +521,8 @@ SECTIONS = {
     "scaling": scaling_section,
     "memory": memory_section,
     "ac": ac_section,
+    "tuning": tuning_section,
+    "profile": profile_section,
 }
 
 

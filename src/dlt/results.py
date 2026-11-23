@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 SCHEMA_VERSION = 1
-KINDS = {"nccl_bw", "smoke_train", "bench", "train", "eval", "sweep"}
+KINDS = {"nccl_bw", "smoke_train", "bench", "train", "eval", "sweep", "profile"}
 REQUIRED = {
     "schema_version": int,
     "kind": str,
@@ -156,7 +156,17 @@ def write_record(rec: dict[str, Any], root: Path | None = None) -> Path:
     return path
 
 
-def load_records(root: Path, kind: str | None = None) -> list[dict[str, Any]]:
+def load_invalid(root: Path) -> dict[str, str]:
+    """run_id -> reason, from ``<root>/invalid.json``: records known to be wrong (e.g. a bug made the run
+    measure something other than its config says). They stay on disk for the record but are skipped
+    by every reader, so a sweep reruns them and no table uses them."""
+    path = root / "invalid.json"
+    return json.loads(path.read_text())["run_ids"] if path.exists() else {}
+
+
+def load_records(root: Path, kind: str | None = None, include_invalid: bool = False) -> list[dict[str, Any]]:
     pattern = f"{kind}/*.json" if kind else "*/*.json"
+    invalid = {} if include_invalid else load_invalid(root)
     recs = [json.loads(p.read_text()) for p in sorted(root.glob(pattern))]
+    recs = [r for r in recs if r.get("run_id") not in invalid]
     return sorted(recs, key=lambda r: r.get("created_at", ""))

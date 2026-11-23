@@ -218,5 +218,64 @@ def test_step_split_and_profiler_window(tmp_path, tokens):
     assert s["timed_steps"] == 4  # 8 steps - 3 warmup - 2 profiled
     assert min(s["fwd_s_median"], s["bwd_s_median"], s["opt_s_median"]) > 0
     assert s["fwd_s_median"] + s["bwd_s_median"] + s["opt_s_median"] <= s["step_time_s_median"] * 1.05
-    assert s["comm_by_rank"] == [{"exposed_comm_s": 0.0, "comm_s": 0.0, "compute_s": 0.0}]  # CPU: no kernels
+    zeros = {"exposed_comm_s": 0.0, "comm_s": 0.0, "compute_s": 0.0, "gpu_idle_s": 0.0}
+    assert s["comm_by_rank"] == [zeros]  # CPU: no kernels
     assert len(r["metrics"]["fwd_s"]) == 8
+
+
+@pytest.mark.parametrize("ac,every,expected", [(False, 1, [1, 1]), (True, 1, [2, 2]), (True, 2, [2, 1])])
+def test_activation_checkpointing_really_recomputes(tmp_path, ac, every, expected):
+    """Phase 3 found checkpointing silently off for from_pretrained models (left in eval mode)."""
+    import torch
+
+    from dlt.train import engine
+    from dlt.train.config import parse
+
+    d = save_tiny_checkpoint(tmp_path / "m", tied=True)
+    sets = [
+        "data=/dev/null",
+        "init=pretrained",
+        f"model={d}",
+        "backend=single",
+        f"activation_checkpointing={str(ac).lower()}",
+        f"ac_every={every}",
+    ]
+    model = engine.build_model(parse([a for s in sets for a in ("--set", s)]))
+    assert model.training
+    calls = [0] * len(model.model.layers)
+    # a pre-hook counts entries: the recompute stops early inside the MLP once the last saved tensor
+    # exists (checkpoint early stopping), so a post-forward hook would never see it
+    for i, layer in enumerate(model.model.layers):
+        layer.mlp.register_forward_pre_hook(lambda m, a, i=i: calls.__setitem__(i, calls[i] + 1))
+    model(input_ids=torch.randint(0, 512, (2, 16))).logits.float().mean().backward()
+    assert calls == expected
+
+
+@pytest.mark.parametrize("nproc,backend", [(1, "single"), (2, "fsdp2")])
+def test_chunked_loss_matches_full_logits(tmp_path, tokens, nproc, backend):
+    full = run(tmp_path, tokens, "full", f"backend={backend}", nproc=nproc)
+    # 64 tokens per micro-batch in chunks of 24 + 24 + 16
+    chunked = run(tmp_path, tokens, "chunked", f"backend={backend}", "loss_chunk=24", nproc=nproc)
+    assert chunked["metrics"]["loss"][0] == pytest.approx(full["metrics"]["loss"][0], rel=1e-6)
+    # FSDP2 computes in BF16: the lm_head weight gradient is summed over the chunks in BF16 rather than
+    # inside one GEMM, so later steps differ by BF16 rounding (about 1e-5 relative)
+    rtol = 1e-5 if backend == "single" else 2e-4
+    np.testing.assert_allclose(chunked["metrics"]["loss"], full["metrics"]["loss"], rtol=rtol)
+    np.testing.assert_allclose(chunked["metrics"]["grad_norm"], full["metrics"]["grad_norm"], rtol=10 * rtol)
+
+
+@pytest.mark.parametrize(
+    "backend,knobs",
+    [
+        ("ddp", ["ddp_bucket_view=true"]),
+        ("ddp", ["ddp_bucket_mb=0.001"]),
+        ("fsdp2", ["reshard_after_forward=false"]),
+        ("fsdp2", ["fsdp_prefetch=2"]),
+    ],
+    ids=["bucket-view", "tiny-buckets", "no-reshard", "prefetch-2"],
+)
+def test_distributed_knobs_do_not_change_the_math(tmp_path, tokens, backend, knobs):
+    base = run(tmp_path, tokens, "base", f"backend={backend}", nproc=2)
+    knob = run(tmp_path, tokens, "knob", f"backend={backend}", *knobs, nproc=2)
+    assert knob["metrics"]["loss"] == base["metrics"]["loss"]
+    assert knob["metrics"]["grad_norm"] == base["metrics"]["grad_norm"]

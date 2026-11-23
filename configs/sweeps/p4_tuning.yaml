@@ -1,0 +1,45 @@
+# Phase 4: one change at a time against a baseline, 3 repeats each, in the same allocation as the
+# baseline. Workloads (PLAN.md Phase 4): Qwen2.5-7B FSDP2 on 2 GPUs (the most communication) and
+# Qwen2.5-1.5B DDP on 2 GPUs. Everything else matches the Phase 3 sweep: pretrained weights,
+# FineWeb-Edu, global batch 65,536 tokens per step, 25 steps, warmup and profiled steps not timed.
+#   slurm/chain.sh 2 slurm/sweep_2gpu.sbatch configs/sweeps/p4_tuning.yaml
+# The sequence-length rows keep tokens per step fixed (16 x 4,096 instead of 32 x 2,048).
+name: p4
+repeats: 3
+run_timeout_s: 1500
+base:
+  init: pretrained
+  data: ${DLT_HOME}/data/fineweb-edu-000/train.bin
+  seq_len: 2048
+  global_batch: 32
+  steps: 25
+  warmup_steps: 5
+  lr: 1.0e-5
+  timing_warmup: 5
+  profile_steps: 2
+  profile_start: 15
+runs:
+  # 7B FSDP2, micro-batch 1 x accumulation 16 (Phase 3: 14.7k tokens/s, 33.5% MFU, 89 GiB)
+  - {name: 7b-base, gpus: 2, set: {model: Qwen/Qwen2.5-7B, backend: fsdp2, micro_batch: 1}}
+  - {name: 7b-no-reshard, gpus: 2, set: {model: Qwen/Qwen2.5-7B, backend: fsdp2, micro_batch: 1, reshard_after_forward: false}}
+  - {name: 7b-prefetch2, gpus: 2, set: {model: Qwen/Qwen2.5-7B, backend: fsdp2, micro_batch: 1, fsdp_prefetch: 2}}
+  - {name: 7b-micro2, gpus: 2, set: {model: Qwen/Qwen2.5-7B, backend: fsdp2, micro_batch: 2}}
+  - {name: 7b-micro2-chunk, gpus: 2, set: {model: Qwen/Qwen2.5-7B, backend: fsdp2, micro_batch: 2, loss_chunk: 1024}}
+  - {name: 7b-chunk, gpus: 2, set: {model: Qwen/Qwen2.5-7B, backend: fsdp2, micro_batch: 1, loss_chunk: 1024}}
+  - {name: 7b-sdpa-flash, gpus: 2, set: {model: Qwen/Qwen2.5-7B, backend: fsdp2, micro_batch: 1, sdpa_backend: flash}}
+  - {name: 7b-sdpa-cudnn, gpus: 2, set: {model: Qwen/Qwen2.5-7B, backend: fsdp2, micro_batch: 1, sdpa_backend: cudnn}}
+  - {name: 7b-sdpa-efficient, gpus: 2, set: {model: Qwen/Qwen2.5-7B, backend: fsdp2, micro_batch: 1, sdpa_backend: efficient}}
+  - {name: 7b-ac-every2, gpus: 2, set: {model: Qwen/Qwen2.5-7B, backend: fsdp2, micro_batch: 1, activation_checkpointing: true, ac_every: 2}}
+  - {name: 7b-seq4096, gpus: 2, set: {model: Qwen/Qwen2.5-7B, backend: fsdp2, micro_batch: 1, seq_len: 4096, global_batch: 16}}
+  # 1.5B DDP, micro-batch 4 x accumulation 4 (Phase 3: 65.2k tokens/s, 34.0% MFU, 73.5 GiB)
+  - {name: 1p5b-base, gpus: 2, set: {model: Qwen/Qwen2.5-1.5B, backend: ddp, micro_batch: 4}}
+  - {name: 1p5b-bucket5, gpus: 2, set: {model: Qwen/Qwen2.5-1.5B, backend: ddp, micro_batch: 4, ddp_bucket_mb: 5}}
+  - {name: 1p5b-bucket100, gpus: 2, set: {model: Qwen/Qwen2.5-1.5B, backend: ddp, micro_batch: 4, ddp_bucket_mb: 100}}
+  - {name: 1p5b-bucket-view, gpus: 2, set: {model: Qwen/Qwen2.5-1.5B, backend: ddp, micro_batch: 4, ddp_bucket_view: true}}
+  - {name: 1p5b-micro8, gpus: 2, set: {model: Qwen/Qwen2.5-1.5B, backend: ddp, micro_batch: 8}}
+  - {name: 1p5b-micro8-chunk, gpus: 2, set: {model: Qwen/Qwen2.5-1.5B, backend: ddp, micro_batch: 8, loss_chunk: 4096}}
+  - {name: 1p5b-chunk, gpus: 2, set: {model: Qwen/Qwen2.5-1.5B, backend: ddp, micro_batch: 4, loss_chunk: 4096}}
+  - {name: 1p5b-sdpa-flash, gpus: 2, set: {model: Qwen/Qwen2.5-1.5B, backend: ddp, micro_batch: 4, sdpa_backend: flash}}
+  - {name: 1p5b-sdpa-cudnn, gpus: 2, set: {model: Qwen/Qwen2.5-1.5B, backend: ddp, micro_batch: 4, sdpa_backend: cudnn}}
+  - {name: 1p5b-sdpa-efficient, gpus: 2, set: {model: Qwen/Qwen2.5-1.5B, backend: ddp, micro_batch: 4, sdpa_backend: efficient}}
+  - {name: 1p5b-seq4096, gpus: 2, set: {model: Qwen/Qwen2.5-1.5B, backend: ddp, micro_batch: 2, seq_len: 4096, global_batch: 16}}

@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "kind": "train",
+  "run_id": "train-12073550-20261123T045838-p2244167-rank1",
+  "created_at": "2026-11-23T04:58:38+00:00",
+  "git_sha": "64432b4",
+  "lock_hash": "64701aa313f8",
+  "slurm": {
+    "job_id": "12073550",
+    "partition": "gpu-short",
+    "nodes": "d4054",
+    "gpus_on_node": "2",
+    "cpus_on_node": "16",
+    "host": "d4054"
+  },
+  "env": {
+    "python": "3.12.16",
+    "torch": "2.14.1+cu126",
+    "transformers": "5.24.0",
+    "peft": "0.22.0",
+    "bitsandbytes": "0.50.2",
+    "accelerate": "1.16.0",
+    "nvidia-nccl-cu12": "2.29.3",
+    "cuda_runtime": "12.6",
+    "nccl_runtime": "2.29.3"
+  },
+  "hardware": {
+    "gpu_name": "NVIDIA H200",
+    "gpu_count": 2,
+    "gpu_total_bytes": 150121545728,
+    "driver": "570.86.15"
+  },
+  "config": {
+    "model": "Qwen/Qwen2.5-7B",
+    "revision": "d149729398750b98c0af14eb82c78cfe92750796",
+    "init": "pretrained",
+    "backend": "ddp",
+    "attn": "sdpa",
+    "activation_checkpointing": true,
+    "sharded_load": true,
+    "data": "/scratch/$USER/dlt/data/fineweb-edu-000/train.bin",
+    "seq_len": 2048,
+    "global_batch": 32,
+    "micro_batch": 1,
+    "seed": 0,
+    "val_data": "",
+    "eval_samples": 0,
+    "steps": 25,
+    "lr": 1e-05,
+    "min_lr_ratio": 0.1,
+    "warmup_steps": 5,
+    "weight_decay": 0.1,
+    "betas": [
+      0.9,
+      0.95
+    ],
+    "grad_clip": 1.0,
+    "accum_sync": "last",
+    "deterministic": false,
+    "ckpt_dir": "",
+    "ckpt_every": 0,
+    "keep_ckpts": 2,
+    "resume": true,
+    "run_name": "p3.probe-7b-ddp-ac.r0",
+    "max_seconds": 0.0,
+    "stop_at_step": -1,
+    "crash_at_step": -1,
+    "crash_in_save": false,
+    "oom_at_step": -1,
+    "write_record": true,
+    "timing_warmup": 5,
+    "profile_steps": 2,
+    "profile_start": 15,
+    "profile_dir": ""
+  },
+  "metrics": {
+    "memory_summary": "|===========================================================================|\n|                  PyTorch CUDA memory summary, device ID 1                 |\n|---------------------------------------------------------------------------|\n|            CUDA OOMs: 1            |        cudaMalloc retries: 2         |\n|===========================================================================|\n|        Metric         | Cur Usage  | Peak Usage | Tot Alloc  | Tot Freed  |\n|---------------------------------------------------------------------------|\n| Allocated memory      | 138695 MiB | 138695 MiB |   2070 GiB |   1935 GiB |\n|       from large pool | 138693 MiB | 138693 MiB |   2069 GiB |   1934 GiB |\n|       from small pool |      2 MiB |     12 MiB |      1 GiB |      1 GiB |\n|---------------------------------------------------------------------------|\n| Active memory         | 138695 MiB | 138695 MiB |   2070 GiB |   1935 GiB |\n|       from large pool | 138693 MiB | 138693 MiB |   2069 GiB |   1934 GiB |\n|       from small pool |      2 MiB |     12 MiB |      1 GiB |      1 GiB |\n|---------------------------------------------------------------------------|\n| Requested memory      | 138323 MiB | 138323 MiB |   2066 GiB |   1931 GiB |\n|       from large pool | 138321 MiB | 138321 MiB |   2065 GiB |   1930 GiB |\n|       from small pool |      2 MiB |     12 MiB |      1 GiB |      1 GiB |\n|---------------------------------------------------------------------------|\n| GPU reserved memory   | 141520 MiB | 141520 MiB | 162986 MiB |  21466 MiB |\n|       from large pool | 141512 MiB | 141512 MiB | 162972 MiB |  21460 MiB |\n|       from small pool |      8 MiB |     14 MiB |     14 MiB |      6 MiB |\n|---------------------------------------------------------------------------|\n| Non-releasable memory |   2824 MiB |   4784 MiB | 774061 MiB | 771237 MiB |\n|       from large pool |   2819 MiB |   4779 MiB | 772741 MiB | 769922 MiB |\n|       from small pool |      5 MiB |      6 MiB |   1319 MiB |   1314 MiB |\n|---------------------------------------------------------------------------|\n| Allocations           |    1248    |    1593    |   70343    |   69095    |\n|       from large pool |     772    |    1079    |   52987    |   52215    |\n|       from small pool |     476    |     629    |   17356    |   16880    |\n|---------------------------------------------------------------------------|\n| Active allocs         |    1248    |    1593    |   70343    |   69095    |\n|       from large pool |     772    |    1079    |   52987    |   52215    |\n|       from small pool |     476    |     629    |   17356    |   16880    |\n|---------------------------------------------------------------------------|\n| GPU reserved segments |     572    |     879    |     980    |     408    |\n|       from large pool |     568    |     872    |     973    |     405    |\n|       from small pool |       4    |       7    |       7    |       3    |\n|---------------------------------------------------------------------------|\n| Non-releasable allocs |     164    |     169    |   27007    |   26843    |\n|       from large pool |     155    |     156    |   16689    |   16534    |\n|       from small pool |       9    |      64    |   10318    |   10309    |\n|---------------------------------------------------------------------------|\n| Oversize allocations  |       0    |       0    |       0    |       0    |\n|---------------------------------------------------------------------------|\n| Oversize GPU segments |       0    |       0    |       0    |       0    |\n|===========================================================================|\n"
+  },
+  "summary": {
+    "run_name": "p3.probe-7b-ddp-ac.r0",
+    "status": "oom",
+    "backend": "ddp",
+    "world_size": 2,
+    "rank": 1,
+    "phase": "step:0",
+    "accum_steps": 16,
+    "error": "CUDA out of memory. Tried to allocate 50.00 MiB. GPU 1 has a total capacity of 139.81 GiB of which 22.00 MiB is free. Including non-PyTorch memory, this process has 139.78 GiB memory in use. Of the allocated memory 135.44 GiB is allocated by PyTorch, and 2.76 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segme",
+    "memory": {
+      "allocated_gib": 135.445,
+      "reserved_gib": 138.203,
+      "peak_alloc_gib": 135.445,
+      "peak_reserved_gib": 138.203,
+      "device_free_gib": 0.021,
+      "device_total_gib": 139.812
+    },
+    "host_rss_gib": 43.71,
+    "predicted_gib": {
+      "params_fp32": 28.37,
+      "grads_fp32": 28.37,
+      "adam_fp32": 56.741,
+      "ddp_buckets": 28.37,
+      "autocast_weights_bf16": 13.169,
+      "activations": 1.277,
+      "final_norm": 0.068,
+      "logits": 4.061,
+      "total": 160.428
+    }
+  },
+  "notes": ""
+}

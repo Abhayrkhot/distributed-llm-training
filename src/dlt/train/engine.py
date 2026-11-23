@@ -53,7 +53,8 @@ import torch.nn.functional as F
 from dlt import dist as dlt_dist
 from dlt.data.packed import GlobalOrder, PackedTokens
 from dlt.metrics.flops import ModelShape, mfu, train_flops_per_token
-from dlt.metrics.memory import GIB, predict
+from dlt.metrics.memory import GIB, predict_for_config
+from dlt.metrics.memory import VERSION as PREDICTOR_VERSION
 from dlt.metrics.overlap import comm_overlap, kernels_from_trace
 from dlt.results import git_sha, new_record, write_record
 from dlt.train import checkpoint as ckpt
@@ -104,9 +105,99 @@ def build_model(cfg: TrainConfig):
             cfg.model, revision=cfg.resolved_revision(), dtype=torch.float32, attn_implementation=cfg.attn
         )
     model.config.use_cache = False
-    if cfg.activation_checkpointing:
+    # from_pretrained returns the model in eval mode, and transformers only checkpoints layers in train
+    # mode: without this, activation checkpointing was silently off for single/DDP in Phase 3
+    model.train()
+    if cfg.activation_checkpointing and cfg.ac_every == 1:
         model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+    elif cfg.activation_checkpointing:
+        checkpoint_layers(model, cfg.ac_every)
+    if cfg.loss_chunk:
+        ChunkedLossHead.install(model.lm_head, cfg.loss_chunk)
     return model
+
+
+def checkpoint_layers(model, every: int) -> list[int]:
+    """Checkpoint decoder layers 0, every, 2*every, ... by wrapping their forward (names unchanged)."""
+    from torch.utils.checkpoint import checkpoint
+
+    chosen = []
+    for i, layer in enumerate(model.model.layers):
+        if i % every:
+            continue
+        inner = layer.forward
+
+        def forward(*args, _inner=inner, **kwargs):
+            return checkpoint(_inner, *args, use_reentrant=False, **kwargs)
+
+        layer.forward = forward
+        chosen.append(i)
+    return chosen
+
+
+def _chunk_ce_sum(h: torch.Tensor, w: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    return F.cross_entropy(F.linear(h, w).float(), y, reduction="sum")
+
+
+class ChunkedLossHead(torch.nn.Linear):
+    """lm_head that returns the summed token cross-entropy instead of logits.
+
+    The output projection and the loss run over ``chunk`` tokens at a time, each under activation
+    checkpointing, so neither the full logits nor their FP32 copy and gradient ever exist (14 V bytes
+    per token otherwise). Costs one extra lm_head forward in backward. Targets are set per micro-batch
+    through ``targets``; each chunk's targets are passed to the checkpointed function explicitly.
+    The class is swapped in place, so the parameter keeps its name and its tie to the embedding.
+    """
+
+    chunk: int
+    targets: torch.Tensor | None
+
+    @classmethod
+    def install(cls, head: torch.nn.Linear, chunk: int) -> None:
+        head.__class__ = cls
+        head.chunk, head.targets = chunk, None
+
+    def forward(self, h: torch.Tensor) -> torch.Tensor:
+        from torch.utils.checkpoint import checkpoint
+
+        if self.targets is None:
+            raise RuntimeError("set lm_head.targets before the forward")
+        hs, ys = h.reshape(-1, h.size(-1)), self.targets.reshape(-1)
+        total = torch.zeros((), dtype=torch.float32, device=h.device)
+        for hc, yc in zip(hs.split(self.chunk), ys.split(self.chunk), strict=True):
+            total = total + checkpoint(_chunk_ce_sum, hc, self.weight, yc, use_reentrant=False)
+        return total
+
+
+def token_loss_sum(model, x: torch.Tensor, y: torch.Tensor, cfg: TrainConfig, autocast: bool) -> torch.Tensor:
+    """Summed token cross-entropy of one micro-batch (FP32), through full logits or the chunked head."""
+    with torch.autocast(x.device.type, dtype=torch.bfloat16, enabled=autocast):
+        if cfg.loss_chunk:
+            getattr(model, "module", model).lm_head.targets = y
+            return model(input_ids=x).logits
+        logits = model(input_ids=x).logits
+    return F.cross_entropy(logits.float().view(-1, logits.size(-1)), y.view(-1), reduction="sum")
+
+
+def sdpa_context(cfg: TrainConfig):
+    """Restrict scaled_dot_product_attention to one backend (forward, recompute and backward)."""
+    if cfg.sdpa_backend == "auto":
+        return contextlib.nullcontext()
+    from torch.nn.attention import SDPBackend, sdpa_kernel
+
+    backends = {
+        "flash": SDPBackend.FLASH_ATTENTION,
+        "efficient": SDPBackend.EFFICIENT_ATTENTION,
+        "cudnn": SDPBackend.CUDNN_ATTENTION,
+        "math": SDPBackend.MATH,
+    }
+    return sdpa_kernel([backends[cfg.sdpa_backend]])
+
+
+def nvtx(cfg: TrainConfig, name: str):
+    if not (cfg.nvtx and torch.cuda.is_available()):
+        return contextlib.nullcontext()
+    return torch.cuda.nvtx.range(name)
 
 
 def wrap(model, cfg: TrainConfig, ctx: dlt_dist.DistCtx):
@@ -122,15 +213,30 @@ def wrap(model, cfg: TrainConfig, ctx: dlt_dist.DistCtx):
 
         if not ctx.distributed:
             return model
-        return DDP(model, device_ids=[ctx.local_rank] if ctx.device.type == "cuda" else None)
+        return DDP(
+            model,
+            device_ids=[ctx.local_rank] if ctx.device.type == "cuda" else None,
+            bucket_cap_mb=cfg.ddp_bucket_mb,
+            gradient_as_bucket_view=cfg.ddp_bucket_view,
+        )
     from torch.distributed.device_mesh import init_device_mesh
     from torch.distributed.fsdp import MixedPrecisionPolicy, fully_shard
 
     mesh = init_device_mesh(ctx.device.type, (ctx.world_size,))
     mp = MixedPrecisionPolicy(param_dtype=torch.bfloat16, reduce_dtype=torch.float32)
-    for layer in model.model.layers:
-        fully_shard(layer, mesh=mesh, mp_policy=mp)
+    layers = list(model.model.layers)
+    for layer in layers:
+        fully_shard(layer, mesh=mesh, mp_policy=mp, reshard_after_forward=cfg.reshard_after_forward)
     fully_shard(model, mesh=mesh, mp_policy=mp)
+    if (
+        cfg.fsdp_prefetch > 0
+    ):  # explicit all-gather prefetch of the next (forward) / previous (backward) layers
+        n = cfg.fsdp_prefetch
+        for i, layer in enumerate(layers):
+            if nxt := layers[i + 1 : i + 1 + n]:
+                layer.set_modules_to_forward_prefetch(nxt)
+            if prev := layers[max(0, i - n) : i][::-1]:
+                layer.set_modules_to_backward_prefetch(prev)
     return model
 
 
@@ -174,9 +280,8 @@ def evaluate(model, val: PackedTokens, cfg: TrainConfig, ctx: dlt_dist.DistCtx, 
     for idx in torch.arange(ctx.rank * per_rank, (ctx.rank + 1) * per_rank).split(cfg.micro_batch):
         x, y = val.batch(idx)
         x, y = x.to(ctx.device), y.to(ctx.device)
-        with torch.autocast(ctx.device.type, dtype=torch.bfloat16, enabled=autocast):
-            logits = model(input_ids=x).logits
-        total[0] += F.cross_entropy(logits.float().view(-1, logits.size(-1)), y.view(-1), reduction="sum")
+        with sdpa_context(cfg):
+            total[0] += token_loss_sum(model, x, y, cfg, autocast)
         total[1] += y.numel()
     model.train()
     if ctx.distributed:
@@ -214,16 +319,7 @@ def _median(xs: list[float]) -> float | None:
 
 
 def _predicted(shape: ModelShape, cfg: TrainConfig, world: int, accum: int) -> dict[str, float]:
-    terms = predict(
-        shape,
-        backend=cfg.backend if world > 1 or cfg.backend != "ddp" else "single",
-        world=world,
-        seq_len=cfg.seq_len,
-        micro_batch=cfg.micro_batch,
-        accum=accum,
-        activation_checkpointing=cfg.activation_checkpointing,
-        accum_sync=cfg.accum_sync,
-    )
+    terms = predict_for_config(shape, cfg, world, accum)
     return {k: round(v / GIB, 3) for k, v in terms.items()}
 
 
@@ -253,6 +349,7 @@ def _oom_exit(cfg: TrainConfig, ctx: dlt_dist.DistCtx, state: dict, err: BaseExc
         "memory": mem,
         "host_rss_gib": round(_host_rss_gib(), 2),
         "predicted_gib": state.get("predicted"),
+        "predictor_version": PREDICTOR_VERSION,
     }
     metrics = {"memory_summary": torch.cuda.memory_summary(ctx.device) if cuda else ""}
     if cfg.write_record:
@@ -267,6 +364,8 @@ def _oom_exit(cfg: TrainConfig, ctx: dlt_dist.DistCtx, state: dict, err: BaseExc
 
 def main(argv: list[str] | None = None) -> int:
     cfg = parse(argv)
+    if cfg.alloc_conf:  # read when the CUDA caching allocator initializes, which is after this
+        os.environ["PYTORCH_CUDA_ALLOC_CONF"] = cfg.alloc_conf
     if cfg.deterministic:
         os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
         torch.use_deterministic_algorithms(True)
@@ -385,7 +484,10 @@ def train(cfg: TrainConfig, ctx: dlt_dist.DistCtx, root: Path | None, state: dic
             os.kill(os.getpid(), signal.SIGKILL)
         if step == cfg.oom_at_step and ctx.is_main:
             raise torch.OutOfMemoryError(f"simulated out of memory at step {step} (oom_at_step)")
-        if step == prof_first:
+        if step == prof_first and cfg.profiler == "nsys":
+            torch.cuda.profiler.start()  # nsys --capture-range=cudaProfilerApi records from here
+            prof = "nsys"
+        elif step == prof_first:
             prof_dir = Path(tempfile.mkdtemp(prefix="dlt-prof-"))
             # GPU kernels only: CPU op events would make traces of 16-32 micro-batch steps huge
             activity = torch.profiler.ProfilerActivity.CUDA if cuda else torch.profiler.ProfilerActivity.CPU
@@ -399,21 +501,27 @@ def train(cfg: TrainConfig, ctx: dlt_dist.DistCtx, root: Path | None, state: dic
         for i, idx in enumerate(mbs):
             x, y = data.batch(idx)
             x, y = x.to(ctx.device, non_blocking=True), y.to(ctx.device, non_blocking=True)
-            with _no_grad_sync(model, cfg, ctx, last=i == len(mbs) - 1):
+            with _no_grad_sync(model, cfg, ctx, last=i == len(mbs) - 1), sdpa_context(cfg):
                 f0 = clock.now()
-                with torch.autocast(ctx.device.type, dtype=torch.bfloat16, enabled=autocast):
-                    logits = model(input_ids=x).logits
-                loss = F.cross_entropy(logits.float().view(-1, logits.size(-1)), y.view(-1)) / accum
+                with nvtx(cfg, "forward"):
+                    if cfg.loss_chunk:
+                        loss = token_loss_sum(model, x, y, cfg, autocast) / y.numel() / accum
+                    else:  # the Phase 2/3 path, kept op for op
+                        with torch.autocast(ctx.device.type, dtype=torch.bfloat16, enabled=autocast):
+                            logits = model(input_ids=x).logits
+                        loss = F.cross_entropy(logits.float().view(-1, logits.size(-1)), y.view(-1)) / accum
                 f1 = clock.now()
-                loss.backward()
+                with nvtx(cfg, "backward"):
+                    loss.backward()
                 b1 = clock.now()
             fwd_bwd.append((f0, f1, b1))
             loss_sum += loss.detach()
         o0 = clock.now()
-        gnorm = torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
-        opt.step()
-        sched.step()
-        opt.zero_grad(set_to_none=True)
+        with nvtx(cfg, "optimizer"):
+            gnorm = torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
+            opt.step()
+            sched.step()
+            opt.zero_grad(set_to_none=True)
         o1 = clock.now()
         if ctx.distributed:
             dist.all_reduce(loss_sum, op=dist.ReduceOp.AVG if cuda else dist.ReduceOp.SUM)
@@ -429,7 +537,12 @@ def train(cfg: TrainConfig, ctx: dlt_dist.DistCtx, root: Path | None, state: dic
         losses.append(loss_sum.item())
         grad_norms.append(_grad_norm(gnorm))
         lrs.append(sched.get_last_lr()[0])
-        if prof is not None:
+        if prof == "nsys":
+            profiled.append(step)
+            if len(profiled) == cfg.profile_steps:
+                torch.cuda.profiler.stop()
+                prof = None
+        elif prof is not None:
             profiled.append(step)
             if len(profiled) == cfg.profile_steps:
                 prof.stop()
@@ -450,7 +563,9 @@ def train(cfg: TrainConfig, ctx: dlt_dist.DistCtx, root: Path | None, state: dic
             )
         if root and cfg.ckpt_every and step % cfg.ckpt_every == 0:
             save_ckpt(step)
-    if prof is not None:  # the run ended inside the profiling window
+    if prof == "nsys":  # the run ended inside the profiling window
+        torch.cuda.profiler.stop()
+    elif prof is not None:
         prof.stop()
         shutil.rmtree(prof_dir, ignore_errors=True)
     if root and stopped_by is None:
@@ -476,8 +591,9 @@ def train(cfg: TrainConfig, ctx: dlt_dist.DistCtx, root: Path | None, state: dic
     ]
     by_rank = dlt_dist.gather_floats(ctx, mem)
     comm = state.get("comm")
+    comm_keys = ("exposed_comm_s", "comm_s", "compute_s", "gpu_idle_s")
     comm_by_rank = (
-        dlt_dist.gather_floats(ctx, [comm["exposed_comm_s"], comm["comm_s"], comm["compute_s"]])
+        dlt_dist.gather_floats(ctx, [comm[k] for k in comm_keys])
         if cfg.profile_steps and comm is not None
         else None
     )
@@ -521,12 +637,10 @@ def train(cfg: TrainConfig, ctx: dlt_dist.DistCtx, root: Path | None, state: dic
             "sharded_load": sharded_load(cfg),
             **({"load_read_gib": round(load_info["load_read_bytes"] / GIB, 2)} if load_info else {}),
             "predicted_gib": pred,
+            "predictor_version": PREDICTOR_VERSION,
             "predicted_error": round((pred - peak) / peak, 4) if cuda and peak else None,
             "comm_by_rank": (
-                [
-                    {"exposed_comm_s": round(c[0], 5), "comm_s": round(c[1], 5), "compute_s": round(c[2], 5)}
-                    for c in comm_by_rank
-                ]
+                [{k: round(v, 5) for k, v in zip(comm_keys, c, strict=True)} for c in comm_by_rank]
                 if comm_by_rank
                 else None
             ),
