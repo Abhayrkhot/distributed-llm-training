@@ -1,0 +1,32 @@
+# Phase 6 main run: Qwen2.5-72B QLoRA on BIRD train, one epoch, on one H200, submitted as chained 3 h
+# jobs (slurm/phase6_main.sbatch) so it spans at least two Slurm jobs on purpose: each job stops on
+# Slurm's USR1, checkpoints the adapter (with optimizer, scheduler, RNG and step) and the next resumes.
+# Rank and sequence length follow the p6 sweep (docs/phase6.md).
+model: ${DLT_HOME}/models/qwen2.5-72b-nf4
+quant: nf4
+peft: lora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+task: sft
+data: ${DLT_HOME}/data/bird/train.jsonl
+val_data: ${DLT_HOME}/data/bird/val.jsonl
+schemas: ${DLT_HOME}/data/bird/schemas.json
+eval_samples: 128
+seq_len: 4096
+global_batch: 16
+micro_batch: 1
+backend: single
+activation_checkpointing: true
+steps: 500
+lr: 1.0e-4
+min_lr_ratio: 0.1
+warmup_steps: 20
+weight_decay: 0.0
+grad_clip: 1.0
+ckpt_dir: ${DLT_HOME}/ckpt/p6-main
+ckpt_every: 25
+keep_ckpts: 2
+adapter_out: ${DLT_HOME}/adapters/p6-main
+timing_warmup: 3
+run_name: p6-main
