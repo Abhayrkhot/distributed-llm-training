@@ -76,7 +76,32 @@ FlashAttention-3 was not tried: no build for this torch/CUDA pin exists without 
 
 ## 3. Profiler-guided second round
 
-PHASE4_ROUND2
+Both root causes have a direct fix, tested in [configs/sweeps/p4b_fusion.yaml](../configs/sweeps/p4b_fusion.yaml)
+(job 12076272) with the baselines rerun alongside:
+
+- **Hold FSDP2 parameters across the micro-batches of a step** (`fsdp_hold_params`: no reshard after
+  forward, and `set_reshard_after_backward` only on the last micro-batch): each layer is gathered once
+  per step instead of 32 times. 7B: **+24.1%** (18,014 tokens/s, 40.9% MFU); exposed communication falls
+  from 0.133 to 0.022 s per step; memory +12 GiB (the BF16 layers stay gathered).
+- **torch.compile each decoder layer** (one graph shared by all layers, compiled before DDP/FSDP2
+  wrapping): fuses the RMSNorm, SwiGLU, residual and cast kernels. 1.5B DDP: **+25.8%** (81,277 tokens/s,
+  42.4% MFU) and 4 GiB less memory; 7B FSDP2: +12.0%. GPU idle time inside the profiled steps falls from
+  0.167 to 0.065 s per step at 7B (fewer, larger kernels).
+- Both together at 7B: **+39.6%** (20,278 tokens/s, 46.0% MFU, 98 GiB).
+
+**Combined** ([configs/sweeps/p4c_combined.yaml](../configs/sweeps/p4c_combined.yaml), job 12082452,
+fresh baselines):
+
+| Workload | Baseline | Tuned | Change | Settings |
+|---|---|---|---|---|
+| 7B FSDP2, 2 H200s | 14,384 tokens/s, 32.6% MFU, 89.4 GiB | 22,720 tokens/s, **51.6% MFU**, 110.5 GiB | **+58.0%** | compile, hold params, micro-batch 2, cuDNN SDPA |
+| 1.5B DDP, 2 H200s | 64,295 tokens/s, 33.5% MFU, 73.5 GiB | 87,692 tokens/s, **45.8% MFU**, 107.4 GiB | **+36.4%** | compile, micro-batch 8, cuDNN SDPA |
+
+Inside the compiled 7B model cuDNN and FlashAttention-2 tie (+58.0% vs +58.3%); at 1.5B cuDNN is still
+worth 3.8%. For scale: the best single GEMM measured on this GPU in Phase 0 reached 687 TFLOPS, 69% of the
+989 TFLOPS peak, so 51.6% MFU for a whole training step (attention, elementwise work, the optimizer and
+two-GPU communication included) is 74% of that practical ceiling.
+
 
 ## 4. The memory predictor out of sample
 
