@@ -1,0 +1,21 @@
+# Phase 2 real run across chained Slurm jobs: pretrained Qwen2.5-0.5B, FSDP2 on 2 H200s, continued
+# pretraining on FineWeb-Edu. data, val_data and ckpt_dir are passed by slurm/phase2_chain.sbatch.
+# 4,500 steps x 32,768 tokens = 147M tokens. At the 0.26 s/step measured for this setup in the Phase 2
+# parity run, one 20 min link (about 14 min of training) cannot finish, and two can.
+model: Qwen/Qwen2.5-0.5B
+init: pretrained
+backend: fsdp2
+seq_len: 2048
+global_batch: 16
+micro_batch: 4
+steps: 4500
+lr: 3.0e-5
+min_lr_ratio: 0.1
+warmup_steps: 100
+weight_decay: 0.1
+grad_clip: 1.0
+seed: 0
+eval_samples: 256
+ckpt_every: 1000
+keep_ckpts: 2
+run_name: p2-chain

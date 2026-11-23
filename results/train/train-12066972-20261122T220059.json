@@ -1,0 +1,145 @@
+{
+  "schema_version": 1,
+  "kind": "train",
+  "run_id": "train-12066972-20261122T220059",
+  "created_at": "2026-11-22T22:00:59+00:00",
+  "git_sha": "6b96fa6",
+  "lock_hash": "64701aa313f8",
+  "slurm": {
+    "job_id": "12066972",
+    "partition": "gpu-short",
+    "nodes": "d4052",
+    "gpus_on_node": "2",
+    "cpus_on_node": "16",
+    "host": "d4052"
+  },
+  "env": {
+    "python": "3.12.16",
+    "torch": "2.14.1+cu126",
+    "transformers": "5.24.0",
+    "peft": "0.22.0",
+    "bitsandbytes": "0.50.2",
+    "accelerate": "1.16.0",
+    "nvidia-nccl-cu12": "2.29.3",
+    "cuda_runtime": "12.6",
+    "nccl_runtime": "2.29.3"
+  },
+  "hardware": {
+    "gpu_name": "NVIDIA H200",
+    "gpu_count": 2,
+    "gpu_total_bytes": 150121545728,
+    "driver": "570.86.15"
+  },
+  "config": {
+    "model": "Qwen/Qwen2.5-0.5B",
+    "revision": "060db6499f32faf8b98477b0a26969ef7d8b9987",
+    "init": "pretrained",
+    "backend": "ddp",
+    "attn": "eager",
+    "activation_checkpointing": false,
+    "data": "/scratch/$USER/dlt/data/fineweb-edu-000/train.bin",
+    "seq_len": 1024,
+    "global_batch": 16,
+    "micro_batch": 4,
+    "seed": 0,
+    "steps": 20,
+    "lr": 3e-05,
+    "min_lr_ratio": 0.1,
+    "warmup_steps": 5,
+    "weight_decay": 0.1,
+    "betas": [
+      0.9,
+      0.95
+    ],
+    "grad_clip": 1.0,
+    "deterministic": true,
+    "ckpt_dir": "/scratch/$USER/dlt/ckpt/phase2-12066972/ddp",
+    "ckpt_every": 0,
+    "keep_ckpts": 2,
+    "resume": true,
+    "run_name": "det-ddp-second",
+    "max_seconds": 0.0,
+    "stop_at_step": -1,
+    "crash_at_step": -1,
+    "crash_in_save": false,
+    "write_record": true
+  },
+  "metrics": {
+    "first_step": 10,
+    "loss": [
+      2.659034013748169,
+      2.72271728515625,
+      2.6006181240081787,
+      2.80051851272583,
+      2.6927497386932373,
+      2.845534563064575,
+      2.7311851978302,
+      2.620359420776367,
+      2.7853500843048096,
+      2.744192600250244
+    ],
+    "grad_norm": [
+      3.5429134368896484,
+      3.5387072563171387,
+      4.244544506072998,
+      3.783686399459839,
+      3.75884747505188,
+      3.646519660949707,
+      3.5105276107788086,
+      3.595390558242798,
+      4.340755939483643,
+      3.594294786453247
+    ],
+    "lr": [
+      2.067172942406179e-05,
+      1.791113425411332e-05,
+      1.5088865745886681e-05,
+      1.2328270575938213e-05,
+      9.750000000000003e-06,
+      7.466736814155419e-06,
+      5.578270575938212e-06,
+      4.1671363218248875e-06,
+      3.2950073900936235e-06,
+      3e-06
+    ],
+    "step_time_s": [
+      0.58398,
+      0.22621,
+      0.22545,
+      0.22547,
+      0.22816,
+      0.22549,
+      0.22567,
+      0.22572,
+      0.22552,
+      0.22547
+    ]
+  },
+  "summary": {
+    "run_name": "det-ddp-second",
+    "backend": "ddp",
+    "world_size": 2,
+    "accum_steps": 2,
+    "start_step": 10,
+    "end_step": 20,
+    "resumed_from": "step_00000010",
+    "restore_s": 15.62,
+    "stopped_by": null,
+    "loss_first": 2.659034013748169,
+    "loss_last": 2.744192600250244,
+    "step_time_s_median": 0.2255,
+    "tokens_per_s": 72649.3,
+    "mfu": 0.1186,
+    "hfu": 0.1186,
+    "peak_alloc_gib_by_rank": [
+      34.45,
+      32.61
+    ],
+    "peak_reserved_gib_by_rank": [
+      38.41,
+      36.09
+    ],
+    "checkpoints": []
+  },
+  "notes": ""
+}

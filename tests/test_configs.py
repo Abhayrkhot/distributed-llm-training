@@ -11,7 +11,7 @@ CONFIGS = sorted((Path(__file__).resolve().parent.parent / "configs" / "training
 
 @pytest.mark.parametrize("path", CONFIGS, ids=lambda p: p.name)
 def test_config_runs_on_one_and_two_gpus(path):
-    cfg = parse(["--config", str(path), "--set", "data=/dev/null"])
+    cfg = parse(["--config", str(path), "--set", "data=/dev/null", "--set", "val_data=/dev/null"])
     assert cfg.init != "pretrained" or cfg.model in PINNED, "pretrained models must have a pinned revision"
     for world in (1, 2):
         assert cfg.global_batch % (world * cfg.micro_batch) == 0, (

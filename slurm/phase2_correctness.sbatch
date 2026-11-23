@@ -4,6 +4,7 @@
 #   resume     deterministic mode, eager attention: uninterrupted vs stop at 10 + resume, per backend
 #   crash      SIGKILL at step 13 with checkpoints every 5, then recovery from step 10, per backend
 # Records go to $DLT_HOME/results/train; checkpoints are deleted at the end.
+# Subsets: sbatch --export=ALL,PARITY=0,BACKENDS=fsdp2 --time=00:25:00 slurm/phase2_correctness.sbatch
 #SBATCH --job-name=dlt-phase2
 #SBATCH --partition=gpu-short
 #SBATCH --gres=gpu:h200:2
@@ -19,11 +20,13 @@ CK=$DLT_HOME/ckpt/phase2-$SLURM_JOB_ID
 C=(dlt.train --config configs/training/p2_0p5b.yaml --set "data=$DATA")
 FIRST=${CUDA_VISIBLE_DEVICES%%,*}
 
-CUDA_VISIBLE_DEVICES=$FIRST dlt_torchrun 1 "${C[@]}" --set backend=single --set run_name=parity-single
-dlt_torchrun 2 "${C[@]}" --set backend=ddp --set run_name=parity-ddp
-dlt_torchrun 2 "${C[@]}" --set backend=fsdp2 --set run_name=parity-fsdp2
+if [ "${PARITY:-1}" = 1 ]; then
+  CUDA_VISIBLE_DEVICES=$FIRST dlt_torchrun 1 "${C[@]}" --set backend=single --set run_name=parity-single
+  dlt_torchrun 2 "${C[@]}" --set backend=ddp --set run_name=parity-ddp
+  dlt_torchrun 2 "${C[@]}" --set backend=fsdp2 --set run_name=parity-fsdp2
+fi
 
-for b in ddp fsdp2; do
+for b in ${BACKENDS:-ddp fsdp2}; do
   D=("${C[@]}" --set backend=$b --set deterministic=true --set attn=eager --set steps=20 --set seq_len=1024)
   dlt_torchrun 2 "${D[@]}" --set run_name=det-$b-full
   dlt_torchrun 2 "${D[@]}" --set "ckpt_dir=$CK/$b" --set stop_at_step=10 --set run_name=det-$b-first

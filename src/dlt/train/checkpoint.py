@@ -64,6 +64,10 @@ def latest(root: Path) -> Path | None:
     return done[-1] if done else None
 
 
+def read_meta(path: Path) -> dict[str, Any]:
+    return json.loads((path / "meta.json").read_text())
+
+
 def save(
     root: Path,
     step: int,
@@ -103,7 +107,7 @@ def save(
 
 
 def load(path: Path, model, optimizer, scheduler, ctx: DistCtx) -> dict[str, Any]:
-    meta = json.loads((path / "meta.json").read_text())
+    meta = read_meta(path)
     model_sd, optim_sd = get_state_dict(model, optimizer)
     state = {"model": model_sd, "optim": optim_sd}
     dcp.load(state, checkpoint_id=str(path))

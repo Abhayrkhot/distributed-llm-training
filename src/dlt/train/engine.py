@@ -12,6 +12,11 @@ batch (every sequence has exactly ``seq_len`` targets, so averaging micro-batch 
 
 Stopping: SIGUSR1 (forwarded by slurm/launch.sh before the wall-time limit), ``max_seconds`` or
 ``stop_at_step`` make every rank agree to stop at the same step boundary, write a checkpoint and exit 0.
+A run that reaches ``steps`` also checkpoints, so a later link of a job chain finds it complete and exits
+before loading the model.
+
+Validation: with ``val_data`` and ``eval_samples``, the mean token loss over the first ``eval_samples``
+validation sequences is measured at step 0 (fresh runs) and at the end of every run, including stops.
 """
 
 from __future__ import annotations
@@ -127,6 +132,30 @@ def _no_grad_sync(model, cfg: TrainConfig, ctx: dlt_dist.DistCtx, last: bool):
     return contextlib.nullcontext()
 
 
+@torch.no_grad()
+def evaluate(model, val: PackedTokens, cfg: TrainConfig, ctx: dlt_dist.DistCtx, autocast: bool) -> float:
+    """Mean token cross-entropy over val samples [0, eval_samples), each rank taking a contiguous block."""
+    per_rank, rem = divmod(cfg.eval_samples, ctx.world_size)
+    if rem or per_rank % cfg.micro_batch or cfg.eval_samples > len(val):
+        raise ValueError(
+            f"eval_samples={cfg.eval_samples} must be a multiple of world_size x micro_batch "
+            f"and at most {len(val)}"
+        )
+    total = torch.zeros(2, dtype=torch.float64, device=ctx.device)  # loss sum, token count
+    model.eval()
+    for idx in torch.arange(ctx.rank * per_rank, (ctx.rank + 1) * per_rank).split(cfg.micro_batch):
+        x, y = val.batch(idx)
+        x, y = x.to(ctx.device), y.to(ctx.device)
+        with torch.autocast(ctx.device.type, dtype=torch.bfloat16, enabled=autocast):
+            logits = model(input_ids=x).logits
+        total[0] += F.cross_entropy(logits.float().view(-1, logits.size(-1)), y.view(-1), reduction="sum")
+        total[1] += y.numel()
+    model.train()
+    if ctx.distributed:
+        dist.all_reduce(total)
+    return float(total[0] / total[1])
+
+
 def _grad_norm(total) -> float:
     return float(total.full_tensor() if hasattr(total, "full_tensor") else total)
 
@@ -138,6 +167,12 @@ def main(argv: list[str] | None = None) -> int:
         torch.use_deterministic_algorithms(True)
     signal.signal(signal.SIGUSR1, _on_usr1)
     ctx = dlt_dist.setup()
+    root = Path(cfg.ckpt_dir) if cfg.ckpt_dir else None
+    if root and cfg.resume and (done := ckpt.latest(root)) and ckpt.read_meta(done)["step"] >= cfg.steps:
+        if ctx.is_main:
+            print(f"{done} has reached steps={cfg.steps}: run complete, nothing to do", flush=True)
+        dlt_dist.teardown()
+        return 0
     cuda = ctx.device.type == "cuda"
     autocast = cuda and cfg.backend != "fsdp2"
 
@@ -152,7 +187,6 @@ def main(argv: list[str] | None = None) -> int:
     if accum * ctx.world_size * cfg.micro_batch != cfg.global_batch:
         raise ValueError("global_batch must be a multiple of world_size x micro_batch")
 
-    root = Path(cfg.ckpt_dir) if cfg.ckpt_dir else None
     start_step, resumed_from, restore_s = 0, None, None
     if root and cfg.resume and (found := ckpt.latest(root)):
         t0 = time.perf_counter()
@@ -185,6 +219,19 @@ def main(argv: list[str] | None = None) -> int:
                 f"checkpoint step {step}: {info['total_s']:.1f}s {info['bytes'] / 2**30:.2f} GiB", flush=True
             )
         saves.append({"step": step, **info})
+
+    val = PackedTokens(cfg.val_data, cfg.seq_len) if cfg.eval_samples else None
+    val_log: list[dict] = []
+
+    def run_eval(step: int) -> None:
+        t0 = time.perf_counter()
+        loss = evaluate(model, val, cfg, ctx, autocast)
+        val_log.append({"step": step, "loss": loss, "seconds": round(time.perf_counter() - t0, 2)})
+        if ctx.is_main:
+            print(f"val step {step} loss {loss:.4f} ({val_log[-1]['seconds']}s)", flush=True)
+
+    if val is not None and start_step == 0:
+        run_eval(0)
 
     losses, grad_norms, lrs, step_s = [], [], [], []
     stopped_by, t_start = None, time.time()
@@ -243,6 +290,10 @@ def main(argv: list[str] | None = None) -> int:
             )
         if root and cfg.ckpt_every and step % cfg.ckpt_every == 0:
             save_ckpt(step)
+    if root and stopped_by is None:
+        save_ckpt(step)  # the run is complete; later links of a chain see it and exit
+    if val is not None:
+        run_eval(step)
 
     warm = min(3, max(0, len(step_s) - 1))
     timed = step_s[warm:]
@@ -271,6 +322,8 @@ def main(argv: list[str] | None = None) -> int:
             "stopped_by": stopped_by,
             "loss_first": losses[0] if losses else None,
             "loss_last": losses[-1] if losses else None,
+            "val_loss_start": next((v["loss"] for v in val_log if v["step"] == 0), None),
+            "val_loss_end": val_log[-1]["loss"] if val_log else None,
             "step_time_s_median": round(step_med, 4) if step_med else None,
             "tokens_per_s": round(tok_s, 1) if tok_s else None,
             "mfu": round(m, 4) if m is not None else None,
@@ -285,6 +338,7 @@ def main(argv: list[str] | None = None) -> int:
             "grad_norm": grad_norms,
             "lr": lrs,
             "step_time_s": [round(s, 5) for s in step_s],
+            "val": val_log,
         }
         path = write_record(new_record("train", config=cfg.to_dict(), metrics=metrics, summary=summary))
         print(f"steps {start_step}->{step} stopped_by={stopped_by} record {path}", flush=True)

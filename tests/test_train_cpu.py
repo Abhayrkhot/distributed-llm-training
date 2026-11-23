@@ -65,7 +65,7 @@ def run(tmp: Path, tokens: Path, name: str, *sets: str, nproc: int = 1, expect_r
         return None
     recs = [json.loads(p.read_text()) for p in (tmp / "res" / "train").glob("*.json")]
     mine = sorted((r for r in recs if r["summary"]["run_name"] == name), key=lambda r: r["created_at"])
-    return mine[-1]
+    return mine[-1] if mine else None
 
 
 def test_stop_and_resume_is_bit_exact(tmp_path, tokens):
@@ -139,3 +139,24 @@ def test_fsdp2_resume_is_bit_exact(tmp_path, tokens):
     second = run(tmp_path, tokens, "second", "backend=fsdp2", f"ckpt_dir={ck}", nproc=2)
     assert second["summary"]["resumed_from"] == "step_00000005"
     assert second["metrics"]["loss"] == full["metrics"]["loss"][5:]
+
+
+def test_val_loss_across_world_sizes_resume_and_chain_end(tmp_path, tokens):
+    v = (f"val_data={tokens}", "eval_samples=8")
+    single = run(tmp_path, tokens, "single", *v)
+    ddp = run(tmp_path, tokens, "ddp", *v, nproc=2)
+    s, d = single["summary"], ddp["summary"]
+    assert [e["step"] for e in single["metrics"]["val"]] == [0, 8]
+    np.testing.assert_allclose(d["val_loss_start"], s["val_loss_start"], rtol=1e-6)
+    np.testing.assert_allclose(d["val_loss_end"], s["val_loss_end"], rtol=1e-5)
+
+    ck = tmp_path / "ck"
+    first = run(tmp_path, tokens, "first", *v, f"ckpt_dir={ck}", "stop_at_step=4")
+    assert first["summary"]["val_loss_start"] == s["val_loss_start"]
+    second = run(tmp_path, tokens, "second", *v, f"ckpt_dir={ck}")
+    assert second["summary"]["val_loss_start"] is None  # resumed runs skip the step-0 eval
+    assert second["summary"]["val_loss_end"] == s["val_loss_end"]
+    assert ck.joinpath("step_00000008").is_dir()  # completed runs checkpoint their last step
+
+    # a further link of a chain finds the run complete and exits without loading a model or a record
+    assert run(tmp_path, tokens, "third", *v, f"ckpt_dir={ck}") is None

@@ -34,6 +34,8 @@ class TrainConfig:
     global_batch: int = 32  # sequences per optimizer step, across all ranks
     micro_batch: int = 4  # sequences per forward/backward on one rank
     seed: int = 0
+    val_data: str = ""  # val.bin; with eval_samples > 0, val loss at step 0 and at the end of each run
+    eval_samples: int = 0  # the first N val samples, split across ranks (multiple of world x micro_batch)
     # optimization
     steps: int = 100
     lr: float = 3e-5
@@ -66,6 +68,8 @@ class TrainConfig:
             raise ValueError("init must be pretrained, random or tiny")
         if not self.data:
             raise ValueError("data (path to train.bin) is required")
+        if self.eval_samples < 0 or (self.eval_samples and not self.val_data):
+            raise ValueError("eval_samples needs val_data and must be >= 0")
 
     def to_dict(self) -> dict:
         d = dataclasses.asdict(self)
