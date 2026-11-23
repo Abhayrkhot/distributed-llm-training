@@ -20,6 +20,13 @@ Saved activations per token per decoder layer (bytes), from the ops in transform
 Logits: the engine keeps the BF16 logits, cross-entropy saves the FP32 log-softmax output, and its
 backward holds the incoming and outgoing FP32 gradients: 14 V bytes per token.
 
+Autocast with activation checkpointing has two candidate peaks. The autocast cache holds a BF16 copy of
+every weight until the autocast region ends (the end of the forward); with checkpointing, matmuls inside
+checkpointed layers save nothing, so those copies are gone by backward. The prediction is the larger of
+the end of the forward (states + every weight copy + saved layer inputs + BF16 logits) and the start of
+backward (states + the copies still saved + activations + logits gradients). Version 3; version 2 kept
+every copy at the backward peak.
+
 The model is checked against every measured run; the error is reported in the README, not tuned away.
 """
 
@@ -77,29 +84,57 @@ def predict(
         t["grads_fp32"] = 4 * p / shard
     if backend == "ddp" and world > 1 and not ddp_bucket_view:
         t["ddp_buckets"] = 4 * p  # gradient_as_bucket_view=False: buckets copy the gradients
+    n_ck = len(range(0, s.n_layers, ac_every)) if activation_checkpointing else 0  # layers 0, k, 2k, ...
+    plm, vh = s.layer_matmul_params(), s.vocab * s.hidden
     if backend == "fsdp2":
         root = s.vocab * s.hidden * (1 if s.tied_embeddings else 2) + s.hidden
         gathered = s.n_layers if not reshard_after_forward else max(2, 1 + fsdp_prefetch)
         t["fsdp_gathered_bf16"] = 2 * root + 2 * gathered * pl  # root + layers held unsharded
         t["fsdp_layer_grad"] = 6 * pl  # one layer's unsharded BF16 grad and its FP32 reduce copy
-    else:
-        t["autocast_weights_bf16"] = 2 * (s.n_layers * s.layer_matmul_params() + s.vocab * s.hidden)
+    else:  # BF16 weight copies saved for backward: non-checkpointed layers and the lm_head
+        t["autocast_weights_bf16"] = 2 * ((s.n_layers - n_ck) * plm + vh)
 
     per_layer = activation_bytes_per_token_layer(s, backend)
     stream = 2 if backend == "fsdp2" else 4  # bytes per element of the residual stream
+    saved = n_ck * stream * s.hidden + (s.n_layers - n_ck) * per_layer
     if activation_checkpointing:
-        n_ck = len(range(0, s.n_layers, ac_every))  # layers 0, k, 2k, ... are checkpointed
-        saved = n_ck * stream * s.hidden + (s.n_layers - n_ck) * per_layer
         t["activations"] = tokens * (saved + per_layer)  # + one layer recomputed in backward
     else:
         t["activations"] = tokens * s.n_layers * per_layer
     t["final_norm"] = tokens * (8 if backend == "fsdp2" else 10) * s.hidden
     t["logits"] = 14 * s.vocab * (min(loss_chunk, tokens) if loss_chunk else tokens)
+    backward_peak = sum(t.values())
+
+    if backend != "fsdp2" and activation_checkpointing:
+        # end of the forward: the autocast cache still holds every weight copy, the checkpointed layers
+        # hold only their inputs, and the BF16 logits exist (cross-entropy runs after autocast exits)
+        states = sum(
+            v for k, v in t.items() if k in ("params_fp32", "adam_fp32", "grads_fp32", "ddp_buckets")
+        )
+        forward_peak = (
+            states
+            + 2 * (s.n_layers * plm + vh)
+            + tokens * saved
+            + t["final_norm"]
+            + 2 * s.vocab * (min(loss_chunk, tokens) if loss_chunk else tokens)
+        )
+        if forward_peak > backward_peak:
+            t = {
+                **{
+                    k: v
+                    for k, v in t.items()
+                    if k in ("params_fp32", "adam_fp32", "grads_fp32", "ddp_buckets")
+                },
+                "autocast_cache_bf16": 2 * (s.n_layers * plm + vh),
+                "activations": tokens * saved,
+                "final_norm": t["final_norm"],
+                "logits": 2 * s.vocab * (min(loss_chunk, tokens) if loss_chunk else tokens),
+            }
     t["total"] = sum(t.values())
     return t
 
 
-VERSION = 2
+VERSION = 3
 
 
 def predict_gib(s: ModelShape, **kw) -> float:

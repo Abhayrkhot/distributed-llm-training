@@ -50,6 +50,14 @@ runs:
   - {name: 7b-fsdp2-ac-every, gpus: 2, set: {model: Qwen/Qwen2.5-7B, backend: fsdp2, micro_batch: 1, activation_checkpointing: true, accum_sync: every}}
   # 14B, micro-batch 1, 2 GPUs only
   - {name: 14b-fsdp2-ac-every, gpus: 2, set: {model: Qwen/Qwen2.5-14B, backend: fsdp2, micro_batch: 1, activation_checkpointing: true, accum_sync: every}}
+  # FSDP2 on 1 GPU: the same-precision baseline for FSDP2 scaling (added after the first sweep showed
+  # FSDP2-vs-autocast rows above 100%: the two use different BF16 mechanisms)
+  - {name: 0p5b-fsdp2-1gpu, gpus: 1, set: {profile_steps: 0, model: Qwen/Qwen2.5-0.5B, backend: fsdp2, micro_batch: 4}}
+  - {name: 1p5b-fsdp2-1gpu, gpus: 1, set: {profile_steps: 0, model: Qwen/Qwen2.5-1.5B, backend: fsdp2, micro_batch: 4}}
+  - {name: 1p5b-fsdp2-ac-1gpu, gpus: 1, set: {profile_steps: 0, model: Qwen/Qwen2.5-1.5B, backend: fsdp2, micro_batch: 4, activation_checkpointing: true}}
+  - {name: 3b-fsdp2-1gpu, gpus: 1, set: {profile_steps: 0, model: Qwen/Qwen2.5-3B, backend: fsdp2, micro_batch: 2}}
+  - {name: 3b-fsdp2-ac-1gpu, gpus: 1, set: {profile_steps: 0, model: Qwen/Qwen2.5-3B, backend: fsdp2, micro_batch: 2, activation_checkpointing: true}}
+  - {name: 7b-fsdp2-ac-1gpu, gpus: 1, set: {profile_steps: 0, model: Qwen/Qwen2.5-7B, backend: fsdp2, micro_batch: 1, activation_checkpointing: true}}
   # probes near the memory limit (run once)
   - {name: probe-7b-ddp-ac, gpus: 2, repeats: 1, set: {model: Qwen/Qwen2.5-7B, backend: ddp, micro_batch: 1, activation_checkpointing: true}}
   - {name: probe-14b-fsdp2-ac-last, gpus: 2, repeats: 1, set: {model: Qwen/Qwen2.5-14B, backend: fsdp2, micro_batch: 1, activation_checkpointing: true}}

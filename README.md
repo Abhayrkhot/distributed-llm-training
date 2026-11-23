@@ -126,24 +126,27 @@ Median over repeats, (min-max) where there are several. Step split and exposed c
 | 7b-fsdp2 | 7B | 2 | fsdp2 | off | 1 x 16 | 3 | 14,745 (14,669-14,760) | 33.5 (33.3-33.5)% | 33.5% | 1.47/2.93/0.05 | 0.151 (0.143-0.163) | 89.4 | 3.9 | 8 |
 | 7b-fsdp2-ac-every | 7B | 2 | fsdp2 (sync every) | on | 1 x 16 | 3 | 11,779 (11,631-11,781) | 26.7 (26.4-26.7)% | 35.6% | 1.47/4.02/0.05 | 0.332 (0.321-0.346) | 64.6 | 3.9 | 9 |
 | 14b-fsdp2-ac-every | 14B | 2 | fsdp2 (sync every) | on | 1 x 16 | 3 | 5,839 (5,831-5,840) | 26.6 (26.5-26.6)% | 35.4% | 2.99/8.13/0.09 | 0.503 (0.479-0.509) | 121.2 | 5.0 | 32 |
+| 1p5b-single-ac | 1.5B | 1 | single | on | 4 x 8 | 3 | 27,310 (27,239-27,526) | 28.5 (28.4-28.7)% | 38.0% | 0.63/1.73/0.02 | - | 41.2 | 9.4 | 31 |
+| 3b-single-ac | 3B | 1 | single | on | 2 x 16 | 3 | 13,623 (13,612-13,763) | 28.0 (28.0-28.3)% | 37.3% | 1.29/3.47/0.04 | - | 56.0 | 18.0 | 15 |
+| 7b-single-ac | 7B | 1 | single | on | 1 x 32 | 3 | 6,685 (6,587-6,690) | 30.3 (29.9-30.4)% | 40.5% | 2.44/7.28/0.09 | - | 129.2 | 43.4 | 18 |
 <!-- /gen:ladder -->
 
 ### Scaling from 1 to 2 GPUs
 
 <!-- gen:scaling -->
-Scaling efficiency = tokens/s on 2 GPUs / (2 x tokens/s on 1 GPU), same model, precision, data, sequence length, global batch and activation checkpointing (medians over repeats).
+Scaling efficiency = tokens/s on 2 GPUs / (2 x tokens/s on 1 GPU), same model, data, sequence length, global batch, activation checkpointing and precision mechanism (medians over repeats). DDP is compared with the single-GPU run (both BF16 autocast over FP32 weights); FSDP2 with FSDP2 on 1 GPU (BF16 parameter casts). A row marked * compares FSDP2 against the autocast single-GPU run because no 1-GPU FSDP2 run exists, which mixes two precision mechanisms.
 
 | Model | 1-GPU run | 2-GPU run | 1 GPU tokens/s | 2 GPU tokens/s | Efficiency |
 |---|---|---|---|---|---|
 | 0.5B | 0p5b-single | 0p5b-ddp | 69,625 | 134,817 | 96.8% |
-| 0.5B | 0p5b-single | 0p5b-fsdp2 | 69,625 | 128,914 | 92.6% |
+| 0.5B | 0p5b-single | 0p5b-fsdp2 | 69,625 | 128,914 | 92.6% * |
 | 1.5B | 1p5b-single | 1p5b-ddp | 33,744 | 65,234 | 96.7% |
-| 1.5B | 1p5b-single | 1p5b-fsdp2 | 33,744 | 66,534 | 98.6% |
-| 1.5B | none (does not fit on 1 GPU) | 1p5b-fsdp2-ac | - | 54,877 | n/a; MFU 28.6% |
+| 1.5B | 1p5b-single | 1p5b-fsdp2 | 33,744 | 66,534 | 98.6% * |
+| 1.5B | 1p5b-single-ac | 1p5b-fsdp2-ac | 27,310 | 54,877 | 100.5% * |
 | 3B | 3b-single | 3b-ddp | 17,216 | 33,509 | 97.3% |
-| 3B | 3b-single | 3b-fsdp2 | 17,216 | 33,188 | 96.4% |
-| 3B | none (does not fit on 1 GPU) | 3b-fsdp2-ac | - | 27,345 | n/a; MFU 28.1% |
-| 7B | none (does not fit on 1 GPU) | 7b-fsdp2-ac | - | 12,558 | n/a; MFU 28.5% |
+| 3B | 3b-single | 3b-fsdp2 | 17,216 | 33,188 | 96.4% * |
+| 3B | 3b-single-ac | 3b-fsdp2-ac | 13,623 | 27,345 | 100.4% * |
+| 7B | 7b-single-ac | 7b-fsdp2-ac | 6,685 | 12,558 | 93.9% * |
 | 7B | none (does not fit on 1 GPU) | 7b-fsdp2 | - | 14,745 | n/a; MFU 33.5% |
 | 7B | none (does not fit on 1 GPU) | 7b-fsdp2-ac-every | - | 11,779 | n/a; MFU 26.7% |
 | 14B | none (does not fit on 1 GPU) | 14b-fsdp2-ac-every | - | 5,839 | n/a; MFU 26.6% |
@@ -152,9 +155,9 @@ Scaling efficiency = tokens/s on 2 GPUs / (2 x tokens/s on 1 GPU), same model, p
 ### Memory: predicted vs measured
 
 <!-- gen:memory -->
-Predicted peak allocated memory per rank (dlt.metrics.memory, analytical, not fitted) against the measured `max_memory_allocated` (max over ranks), for every run including OOMs. Limit: 139.8 GiB visible per H200. "Now" is predictor version 2; "at run time" is the version the run recorded (version 1 double-counted FSDP2 gradients under no-sync accumulation).
+Predicted peak allocated memory per rank (dlt.metrics.memory, analytical, not fitted) against the measured `max_memory_allocated` (max over ranks), for every run including OOMs. Limit: 139.8 GiB visible per H200. "Now" is predictor version 3; "at run time" is the version the run recorded (version 1 double-counted FSDP2 gradients under no-sync accumulation; version 2 kept autocast weight copies until backward under checkpointing).
 
-Over 45 finished runs: median absolute error 1.1%, worst 4.0% (at run time: median absolute error 2.0%, worst 21.3%); fit vs OOM predicted correctly for 19 of 19 configurations.
+Over 54 finished runs: median absolute error 1.1%, worst 4.0% (at run time: median absolute error 4.0%, worst 21.3%); fit vs OOM predicted correctly for 22 of 22 configurations.
 
 | Run | Predicted now (GiB) | At run time (GiB) | Measured (GiB) | Error now | Outcome |
 |---|---|---|---|---|---|
@@ -174,9 +177,12 @@ Over 45 finished runs: median absolute error 1.1%, worst 4.0% (at run time: medi
 | 7b-fsdp2 | 91.7 | 105.8 | 89.4 | +2.6% | fit (predicted fit) |
 | 7b-fsdp2-ac-every | 65.9 | 65.9 | 64.6 | +2.0% | fit (predicted fit) |
 | 14b-fsdp2-ac-every | 121.0 | 121.0 | 121.2 | -0.2% | fit (predicted fit) |
-| probe-7b-ddp-ac | 160.4 | 160.4 | OOM during step:0 | - | predicted OOM |
+| probe-7b-ddp-ac | 156.4 | 160.4 | OOM during step:0 | - | predicted OOM |
 | probe-14b-fsdp2-ac-last | 148.5 | 176.0 | OOM during step:1 | - | predicted OOM |
 | probe-14b-fsdp2-every | 140.5 | 140.5 | OOM during step:1 | - | predicted OOM |
+| 1p5b-single-ac | 42.0 | 44.5 | 41.2 | +2.0% | fit (predicted fit) |
+| 3b-single-ac | 56.5 | 61.6 | 56.0 | +0.9% | fit (predicted fit) |
+| 7b-single-ac | 128.1 | 132.1 | 129.2 | -0.9% | fit (predicted fit) |
 <!-- /gen:memory -->
 
 ### Activation checkpointing
@@ -189,6 +195,8 @@ Same model, backend, GPUs and micro-batch, checkpointing every decoder layer on 
 | 1.5B | 2 | fsdp2 | 53.3 -> 31.9 | 40% | 66,534 -> 54,877 | 17.5% |
 | 3B | 2 | fsdp2 | 55.5 -> 38.3 | 31% | 33,188 -> 27,345 | 17.6% |
 | 7B | 2 | fsdp2 | 89.4 -> 77.7 | 13% | 14,745 -> 12,558 | 14.8% |
+| 1.5B | 1 | single | 67.7 -> 41.2 | 39% | 33,744 -> 27,310 | 19.1% |
+| 3B | 1 | single | 80.8 -> 56.0 | 31% | 17,216 -> 13,623 | 20.9% |
 <!-- /gen:ac -->
 
 ## Profiling and tuning (Phase 4)
@@ -202,7 +210,12 @@ _No Phase 4 runs yet._
 <!-- /gen:tuning -->
 
 <!-- gen:profile -->
-_No Nsight Systems profiles yet._
+Nsight Systems, rank 0, GPU kernel time per optimizer step by category (share of kernel time), over the captured steps ([scripts/nsys_summary.py](scripts/nsys_summary.py)). NCCL kernel time includes time spent waiting for the other rank.
+
+| Run | GEMM | attention | NCCL | elementwise + reduce | cross-entropy | optimizer + clip | FSDP2 copies | other | Exposed comm (s) | GPU idle (s) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| p4-nsys-7b-base | 2.128 (35%) | 0.276 (4%) | 1.524 (25%) | 0.000 (0%) | 0.040 (1%) | 0.558 (9%) | 0.000 (0%) | 1.614 (26%) | 0.297 | 0.156 |
+| p4-nsys-1p5b-base | 0.410 (34%) | 0.094 (8%) | 0.254 (21%) | 0.000 (0%) | 0.039 (3%) | 0.018 (1%) | 0.000 (0%) | 0.409 (33%) | 0.119 | 0.043 |
 <!-- /gen:profile -->
 
 ## Layout

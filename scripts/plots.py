@@ -94,8 +94,8 @@ def chain_plot() -> None:
         ax.axvline(b, color=MUTED, linewidth=1, linestyle="--")
         ax.annotate(
             f"job {r['slurm']['job_id']} resumes at step {b}",
-            (b, ax.get_ylim()[1]),
-            xytext=(6, -14),
+            (b, ax.get_ylim()[0]),
+            xytext=(6, 8),
             textcoords="offset points",
             color=MUTED,
             fontsize=9,
@@ -103,7 +103,7 @@ def chain_plot() -> None:
     ax.set_xlabel("optimizer step")
     ax.set_ylabel("loss (nats/token)")
     ax.set_title("One run across two Slurm jobs (Qwen2.5-0.5B, FSDP2, 2 H200s)")
-    ax.legend(loc="upper right")
+    ax.legend(loc="upper right", ncol=2)
     save(fig, "p2_chain.png")
 
 
@@ -139,28 +139,22 @@ def memory_plot() -> None:
     ax.plot([0, top], [0, top], color=MUTED, linewidth=1, linestyle="--", label="predicted = measured")
     ax.axhline(g.H200_GIB, color=GRID, linewidth=2)
     ax.text(4, g.H200_GIB + 2, f"{g.H200_GIB} GiB per H200", color=MUTED, fontsize=9)
-    seen = set()
-    for e, recs in entries.items():
+    seen, oom_label = set(), "ran out of memory (drawn on the limit)"
+    for recs in entries.values():
         s = recs[0]["summary"]
         b = s["backend"]
         label = b if b not in seen else None
         seen.add(b)
+        pred = g._predict_now(recs[0])
         if s.get("status") == "oom":
-            p = s["predicted_gib"]["total"]
-            ax.plot(p, top - 8, "x", color=BACKEND[b], markersize=9, markeredgewidth=2, label=label)
-            ax.annotate(
-                f"{e}: OOM",
-                (p, top - 8),
-                xytext=(-6, 8),
-                textcoords="offset points",
-                ha="right",
-                color=MUTED,
-                fontsize=8,
+            ax.plot(
+                pred, g.H200_GIB, "x", color=BACKEND[b], markersize=10, markeredgewidth=2.5, label=oom_label
             )
+            oom_label = None
             continue
         for r in recs:
             ax.plot(
-                r["summary"]["predicted_gib"],
+                pred,
                 max(r["summary"]["peak_alloc_gib_by_rank"]),
                 "o",
                 color=BACKEND[b],
@@ -172,10 +166,10 @@ def memory_plot() -> None:
             label = None
     ax.set_xlim(0, top)
     ax.set_ylim(0, top)
-    ax.set_xlabel("predicted peak per rank (GiB)")
+    ax.set_xlabel(f"predicted peak per rank (GiB), predictor version {g.PREDICTOR_VERSION}")
     ax.set_ylabel("measured max_memory_allocated (GiB)")
     ax.set_title("Memory predictor vs measurement")
-    ax.legend(loc="upper left")
+    ax.legend(loc="lower right")
     save(fig, "p3_memory.png")
 
 
@@ -211,7 +205,7 @@ def split_plot() -> None:
     ax.grid(axis="y", visible=False)
     ax.set_xlabel("share of step time (%); total step time at right")
     ax.set_title("Where a training step goes")
-    ax.legend(loc="lower center", bbox_to_anchor=(0.5, 1.02), ncol=4)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.09), ncol=4)
     save(fig, "p3_step_split.png")
 
 

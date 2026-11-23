@@ -305,31 +305,39 @@ def scaling_section() -> str:
     if not twos:
         return "_No Phase 3 runs yet._"
     lines = [
-        "Scaling efficiency = tokens/s on 2 GPUs / (2 x tokens/s on 1 GPU), same model, precision, data, "
-        "sequence length, global batch and activation checkpointing (medians over repeats).",
+        "Scaling efficiency = tokens/s on 2 GPUs / (2 x tokens/s on 1 GPU), same model, data, sequence "
+        "length, global batch, activation checkpointing and precision mechanism (medians over repeats). "
+        "DDP is compared with the single-GPU run (both BF16 autocast over FP32 weights); FSDP2 with FSDP2 on "
+        "1 GPU (BF16 parameter casts). A row marked * compares FSDP2 against the autocast single-GPU run "
+        "because no 1-GPU FSDP2 run exists, which mixes two precision mechanisms.",
         "",
         "| Model | 1-GPU run | 2-GPU run | 1 GPU tokens/s | 2 GPU tokens/s | Efficiency |",
         "|---|---|---|---|---|---|",
     ]
     for e2, v2 in twos.items():
         c2 = v2[0]["config"]
-        base = [
+        same = [
             e1
             for e1, v1 in ones.items()
             if v1[0]["config"]["model"] == c2["model"]
             and v1[0]["config"]["activation_checkpointing"] == c2["activation_checkpointing"]
+            and v1[0]["config"].get("accum_sync", "last") == c2.get("accum_sync", "last")
         ]
+        want = "fsdp2" if c2["backend"] == "fsdp2" else "single"
+        exact = [e for e in same if ones[e][0]["config"]["backend"] == want]
+        fallback = [e for e in same if ones[e][0]["config"]["backend"] == "single"]
+        base, mark = (exact[0], "") if exact else ((fallback[0], " *") if fallback else (None, ""))
         t2 = _med([r["summary"]["tokens_per_s"] for r in v2])
-        if not base:
+        if base is None:
             mfu = _med([100 * r["summary"]["mfu"] for r in v2])
             lines.append(
                 f"| {_model(v2[0])} | none (does not fit on 1 GPU) | {e2} | - | {t2:,.0f} | "
                 f"n/a; MFU {mfu:.1f}% |"
             )
             continue
-        t1 = _med([r["summary"]["tokens_per_s"] for r in ones[base[0]]])
+        t1 = _med([r["summary"]["tokens_per_s"] for r in ones[base]])
         lines.append(
-            f"| {_model(v2[0])} | {base[0]} | {e2} | {t1:,.0f} | {t2:,.0f} | {100 * t2 / (2 * t1):.1f}% |"
+            f"| {_model(v2[0])} | {base} | {e2} | {t1:,.0f} | {t2:,.0f} | {100 * t2 / (2 * t1):.1f}%{mark} |"
         )
     return "\n".join(lines)
 
@@ -357,7 +365,8 @@ def memory_section() -> str:
         "Predicted peak allocated memory per rank (dlt.metrics.memory, analytical, not fitted) against the "
         f"measured `max_memory_allocated` (max over ranks), for every run including OOMs. Limit: {H200_GIB} "
         f'GiB visible per H200. "Now" is predictor version {PREDICTOR_VERSION}; "at run time" is the '
-        "version the run recorded (version 1 double-counted FSDP2 gradients under no-sync accumulation).",
+        "version the run recorded (version 1 double-counted FSDP2 gradients under no-sync accumulation; "
+        "version 2 kept autocast weight copies until backward under checkpointing).",
         "",
         "| Run | Predicted now (GiB) | At run time (GiB) | Measured (GiB) | Error now | Outcome |",
         "|---|---|---|---|---|---|",
@@ -490,19 +499,31 @@ def profile_section() -> str:
     recs = [r for r in load_records(ROOT / "results", "profile") if r["summary"].get("rank") == 0]
     if not recs:
         return "_No Nsight Systems profiles yet._"
-    cats = ["gemm", "attention", "cross_entropy", "optimizer", "nccl", "other"]
+    groups = {  # README columns -> nsys_summary categories
+        "GEMM": ("gemm",),
+        "attention": ("attention",),
+        "NCCL": ("nccl",),
+        "elementwise + reduce": ("elementwise", "reduce"),
+        "cross-entropy": ("cross_entropy",),
+        "optimizer + clip": ("optimizer", "grad_clip", "foreach"),
+        "FSDP2 copies": ("fsdp_copy",),
+        "other": ("other",),
+    }
     lines = [
         "Nsight Systems, rank 0, GPU kernel time per optimizer step by category (share of kernel time), "
-        "over the captured steps ([scripts/nsys_summary.py](scripts/nsys_summary.py)).",
+        "over the captured steps ([scripts/nsys_summary.py](scripts/nsys_summary.py)). NCCL kernel time "
+        "includes time spent waiting for the other rank.",
         "",
-        "| Run | " + " | ".join(cats) + " | Exposed comm (s) | GPU idle (s) |",
-        "|---|" + "---|" * (len(cats) + 2),
+        "| Run | " + " | ".join(groups) + " | Exposed comm (s) | GPU idle (s) |",
+        "|---|" + "---|" * (len(groups) + 2),
     ]
     for r in recs:
         s = r["summary"]
-        cells = [
-            f"{s['kernel_s_per_step'].get(c, 0):.3f} ({100 * s['kernel_share'].get(c, 0):.0f}%)" for c in cats
-        ]
+        cells = []
+        for cats in groups.values():
+            sec = sum(s["kernel_s_per_step"].get(c, 0) for c in cats)
+            share = sum(s["kernel_share"].get(c, 0) for c in cats)
+            cells.append(f"{sec:.3f} ({100 * share:.0f}%)")
         lines.append(
             f"| {s['name']} | "
             + " | ".join(cells)

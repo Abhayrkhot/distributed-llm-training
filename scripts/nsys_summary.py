@@ -23,12 +23,20 @@ sys.path.insert(0, str(ROOT / "src"))
 from dlt.metrics.overlap import comm_overlap  # noqa: E402
 from dlt.results import new_record, write_record  # noqa: E402
 
-CATEGORIES = [  # first match wins, on the lower-cased kernel name
+# First match wins, on the lower-cased demangled name. The demangled name carries the template
+# arguments: multi_tensor_apply_kernel is the launcher for fused Adam, gradient-norm and FSDP2 copy
+# kernels alike, and only its functor argument tells them apart.
+CATEGORIES = [
     ("nccl", ("nccl",)),
-    ("attention", ("flash", "fmha", "attention", "attn", "cudnn")),
-    ("gemm", ("gemm", "nvjet", "cutlass", "xmma", "cublas", "matmul")),
+    ("attention", ("flash", "fmha", "attention", "attn", "cudnn", "sdpa")),
+    ("gemm", ("gemm", "nvjet", "cutlass", "xmma", "cublas", "matmul", "gemv")),
     ("cross_entropy", ("softmax", "nll_loss", "cross_entropy", "logsumexp")),
-    ("optimizer", ("multi_tensor", "fused_adam", "adam")),
+    ("optimizer", ("fusedadam", "fused_adam", "adamw")),
+    ("grad_clip", ("lpnorm", "norm_kernel", "foreach_norm")),
+    ("fsdp_copy", ("chunk_cat", "split_with_sizes")),
+    ("foreach", ("multi_tensor_apply",)),
+    ("elementwise", ("elementwise_kernel",)),
+    ("reduce", ("reduce_kernel",)),
 ]
 
 
@@ -40,14 +48,16 @@ def category(name: str) -> str:
     return "other"
 
 
-def kernels(db: Path) -> list[tuple[str, float, float]]:
+def kernels(db: Path) -> list[tuple[str, str, float, float]]:
+    """(short name, demangled name, start_us, end_us) for every kernel, plus memcpy seconds."""
     con = sqlite3.connect(db)
     try:
         cols = {r[1] for r in con.execute("PRAGMA table_info(CUPTI_ACTIVITY_KIND_KERNEL)")}
-        name_col = "shortName" if "shortName" in cols else "demangledName"
+        short_col = "shortName" if "shortName" in cols else "demangledName"
+        long_col = "demangledName" if "demangledName" in cols else short_col
         rows = con.execute(
-            f"SELECT s.value, k.start, k.end FROM CUPTI_ACTIVITY_KIND_KERNEL k "
-            f"JOIN StringIds s ON k.{name_col} = s.id"
+            f"SELECT a.value, b.value, k.start, k.end FROM CUPTI_ACTIVITY_KIND_KERNEL k "
+            f"JOIN StringIds a ON k.{short_col} = a.id JOIN StringIds b ON k.{long_col} = b.id"
         ).fetchall()
         try:
             memcpy = con.execute("SELECT SUM(end - start) FROM CUPTI_ACTIVITY_KIND_MEMCPY").fetchone()[0] or 0
@@ -56,7 +66,7 @@ def kernels(db: Path) -> list[tuple[str, float, float]]:
     finally:
         con.close()
     # nanoseconds -> microseconds, the unit dlt.metrics.overlap takes
-    return [(n, s / 1e3, e / 1e3) for n, s, e in rows], memcpy / 1e9
+    return [(a, b, s / 1e3, e / 1e3) for a, b, s, e in rows], memcpy / 1e9
 
 
 def main() -> int:
@@ -87,13 +97,15 @@ def main() -> int:
     )
     ks, memcpy_s = kernels(db)
     per_cat: dict[str, float] = defaultdict(float)
-    per_kernel: dict[str, list[float]] = defaultdict(lambda: [0, 0.0])
-    for name, s, e in ks:
-        per_cat[category(name)] += (e - s) / 1e6
-        per_kernel[name][0] += 1
-        per_kernel[name][1] += (e - s) / 1e6
+    per_kernel: dict[tuple[str, str], list[float]] = defaultdict(lambda: [0, 0.0])
+    for short, long, s, e in ks:
+        cat = category(long)
+        per_cat[cat] += (e - s) / 1e6
+        per_kernel[(short, cat)][0] += 1
+        per_kernel[(short, cat)][1] += (e - s) / 1e6
     busy = sum(per_cat.values())
-    top = sorted(per_kernel.items(), key=lambda kv: -kv[1][1])[:20]
+    top = sorted(per_kernel.items(), key=lambda kv: -kv[1][1])[:25]
+    timeline = [(long, s, e) for _, long, s, e in ks]
     summary = {
         "name": args.name,
         "rank": args.rank,
@@ -104,13 +116,13 @@ def main() -> int:
         "memcpy_s_per_step": round(memcpy_s / args.steps, 5),
         **{
             k: (round(v, 5) if v is not None else None)
-            for k, v in comm_overlap(ks, n_steps=args.steps).items()
+            for k, v in comm_overlap(timeline, n_steps=args.steps).items()
         },
     }
     metrics = {
         "top_kernels": [
-            {"name": n[:160], "category": category(n), "calls": c, "s_per_step": round(t / args.steps, 5)}
-            for n, (c, t) in top
+            {"name": n[:160], "category": cat, "calls": c, "s_per_step": round(t / args.steps, 5)}
+            for (n, cat), (c, t) in top
         ]
     }
     rec = new_record(
