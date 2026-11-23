@@ -88,6 +88,8 @@ def extract_all(zip_path: Path, out: Path) -> None:
     with zipfile.ZipFile(zip_path) as z:
         z.extractall(out)
     for inner in sorted(out.rglob("*.zip")):
+        if "__MACOSX" in inner.parts or inner.name.startswith("._"):  # macOS metadata, not archives
+            continue
         with zipfile.ZipFile(inner) as z:
             z.extractall(inner.parent)
         inner.unlink()

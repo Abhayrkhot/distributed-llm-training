@@ -19,7 +19,7 @@ PINNED = {
     "Qwen/Qwen2.5-72B": "efba10c8e54e91e0d9570ab5f7b51a958474d4cb",
     "Qwen/Qwen2.5-72B-Instruct": "495f39366efef23836d0cfae4fbe635880d2be31",  # eval reference only
 }
-BACKENDS = ("single", "ddp", "fsdp2")
+BACKENDS = ("single", "ddp", "fsdp2", "fsdp1")  # fsdp1: adapter runs on a sharded NF4 base (Phase 7)
 
 
 @dataclass
@@ -79,12 +79,16 @@ class TrainConfig:
     ckpt_every: int = 0  # 0: only when stopping
     keep_ckpts: int = 2
     resume: bool = True
+    async_ckpt: bool = False  # DCP async_save: block only to stage the state, publish when written
+    stop_on_term: bool = False  # treat SIGTERM like the wall-time USR1: checkpoint at the next step, exit
     # run control and test hooks
     run_name: str = ""
     max_seconds: float = 0.0  # stop (checkpoint, exit) after this much wall time; 0 = off
     stop_at_step: int = -1  # behave as if SIGUSR1 arrived before this step
     crash_at_step: int = -1  # SIGKILL every rank before this step (simulated node failure)
     crash_in_save: bool = False  # SIGKILL after the checkpoint is written but before it is published
+    crash_in_eval: bool = False  # SIGKILL at the start of the end-of-run evaluation
+    term_at_step: int = -1  # send SIGTERM to this process before this step (tests stop_on_term)
     oom_at_step: int = -1  # raise OutOfMemoryError on rank 0 before this step (tests the OOM record)
     write_record: bool = True
     # measurement
@@ -121,7 +125,9 @@ class TrainConfig:
         if self.quant and not self.peft:
             raise ValueError("a quantized base can only be trained through adapters (peft=lora)")
         if self.peft and (self.backend == "fsdp2" or self.loss_chunk or self.compile or self.ac_every > 1):
-            raise ValueError("peft runs support single/ddp without loss_chunk, compile or ac_every")
+            raise ValueError("peft runs support single/ddp/fsdp1 without loss_chunk, compile or ac_every")
+        if self.backend == "fsdp1" and not self.peft:
+            raise ValueError("backend fsdp1 is only for adapter runs (full-parameter runs use fsdp2)")
         if self.eval_samples < 0 or (self.eval_samples and not self.val_data):
             raise ValueError("eval_samples needs val_data and must be >= 0")
 

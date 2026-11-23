@@ -106,7 +106,9 @@ def build_model(cfg: TrainConfig, device: torch.device | None = None):
         model = AutoModelForCausalLM.from_pretrained(
             cfg.model,
             revision=cfg.resolved_revision(),
-            quantization_config=None if prequantized else bnb_config(),
+            quantization_config=None
+            if prequantized
+            else bnb_config(torch.bfloat16 if cfg.backend == "fsdp1" else None),
             device_map={"": device.index if device is not None and device.type == "cuda" else 0},
             dtype=torch.bfloat16,
             attn_implementation=cfg.attn,
@@ -302,6 +304,21 @@ def wrap(model, cfg: TrainConfig, ctx: dlt_dist.DistCtx):
         if ctx.distributed:
             raise ValueError("backend=single needs exactly one rank")
         return model
+    if cfg.backend == "fsdp1":
+        from peft.utils.other import fsdp_auto_wrap_policy
+        from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+        from torch.distributed.fsdp import ShardingStrategy
+
+        # decoder layers are units, and each LoRA leaf module is its own unit (FSDP1 flattens a unit's
+        # parameters together, which needs one dtype and one requires_grad per unit)
+        return FSDP(
+            model,
+            auto_wrap_policy=fsdp_auto_wrap_policy(model),
+            sharding_strategy=ShardingStrategy.FULL_SHARD,
+            use_orig_params=False,
+            device_id=ctx.device if ctx.device.type == "cuda" else None,
+            limit_all_gathers=True,
+        )
     if cfg.backend == "ddp":
         from torch.nn.parallel import DistributedDataParallel as DDP
 
@@ -359,7 +376,7 @@ def _no_grad_sync(model, cfg: TrainConfig, ctx: dlt_dist.DistCtx, last: bool):
         if cfg.backend == "fsdp2":
             model.set_requires_gradient_sync(True)
         return contextlib.nullcontext()
-    if cfg.backend == "ddp":
+    if cfg.backend in ("ddp", "fsdp1"):
         return model.no_sync()
     model.set_requires_gradient_sync(False)
     return contextlib.nullcontext()
@@ -469,6 +486,8 @@ def main(argv: list[str] | None = None) -> int:
         os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
         torch.use_deterministic_algorithms(True)
     signal.signal(signal.SIGUSR1, _on_usr1)
+    if cfg.stop_on_term:  # scancel and node drains send SIGTERM, then SIGKILL after Slurm's KillWait
+        signal.signal(signal.SIGTERM, _on_usr1)
     ctx = dlt_dist.setup()
     root = Path(cfg.ckpt_dir) if cfg.ckpt_dir else None
     if root and cfg.resume and (done := ckpt.latest(root)) and ckpt.read_meta(done)["step"] >= cfg.steps:
@@ -534,28 +553,42 @@ def train(cfg: TrainConfig, ctx: dlt_dist.DistCtx, root: Path | None, state: dic
     saves: list[dict] = []
     saved_steps = {start_step} if resumed_from else set()
 
+    pending: list[ckpt.PendingSave] = []  # at most one asynchronous save in flight
+
+    def finish_pending() -> None:
+        while pending:
+            p = pending.pop()
+            info = p.finish(crash_before_publish=cfg.crash_in_save)
+            if ctx.is_main:
+                print(
+                    f"checkpoint step {p.step}: {info['total_s']:.1f}s (blocked {info['blocking_s']:.1f}s) "
+                    f"{info['bytes'] / 2**30:.2f} GiB",
+                    flush=True,
+                )
+            saves.append({"step": p.step, **info})
+
     def save_ckpt(step: int) -> None:
         if step in saved_steps:  # e.g. a periodic save and a stop at the same step
             return
         saved_steps.add(step)
         state["phase"] = f"save:{step}"
-        info = ckpt.save(
-            root,
-            step,
-            model,
-            opt,
-            sched,
-            ctx,
-            meta={"config": cfg.to_dict(), "git_sha": git_sha()},
-            keep=cfg.keep_ckpts,
-            crash_before_publish=cfg.crash_in_save,
-            frozen=not cfg.peft,  # adapter runs save the trainable tensors and their optimizer state
-        )
-        if ctx.is_main:
-            print(
-                f"checkpoint step {step}: {info['total_s']:.1f}s {info['bytes'] / 2**30:.2f} GiB", flush=True
+        finish_pending()  # publish the previous asynchronous save before starting another
+        pending.append(
+            ckpt.begin_save(
+                root,
+                step,
+                model,
+                opt,
+                sched,
+                ctx,
+                meta={"config": cfg.to_dict(), "git_sha": git_sha()},
+                keep=cfg.keep_ckpts,
+                frozen=not cfg.peft,  # adapter runs save the trainable tensors and their optimizer state
+                asynchronous=cfg.async_ckpt,
             )
-        saves.append({"step": step, **info})
+        )
+        if not cfg.async_ckpt:
+            finish_pending()
 
     if not cfg.eval_samples:
         val = None
@@ -568,6 +601,8 @@ def train(cfg: TrainConfig, ctx: dlt_dist.DistCtx, root: Path | None, state: dic
     def run_eval(step: int) -> None:
         state["phase"] = f"eval:{step}"
         t0 = time.perf_counter()
+        if cfg.crash_in_eval and step > 0:
+            os.kill(os.getpid(), signal.SIGKILL)
         loss = evaluate(model, val, cfg, ctx, autocast)
         val_log.append({"step": step, "loss": loss, "seconds": round(time.perf_counter() - t0, 2)})
         if ctx.is_main:
@@ -599,6 +634,8 @@ def train(cfg: TrainConfig, ctx: dlt_dist.DistCtx, root: Path | None, state: dic
             break
         if step == cfg.crash_at_step:
             os.kill(os.getpid(), signal.SIGKILL)
+        if step == cfg.term_at_step:
+            os.kill(os.getpid(), signal.SIGTERM)
         if step == cfg.oom_at_step and ctx.is_main:
             raise torch.OutOfMemoryError(f"simulated out of memory at step {step} (oom_at_step)")
         if step == prof_first and cfg.profiler == "nsys":
@@ -653,7 +690,10 @@ def train(cfg: TrainConfig, ctx: dlt_dist.DistCtx, root: Path | None, state: dic
             loss_sum += loss.detach()
         o0 = clock.now()
         with nvtx(cfg, "optimizer"):
-            gnorm = torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
+            if cfg.backend == "fsdp1":  # sharded flat parameters: FSDP computes the global norm
+                gnorm = model.clip_grad_norm_(cfg.grad_clip)
+            else:
+                gnorm = torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
             opt.step()
             sched.step()
             opt.zero_grad(set_to_none=True)
@@ -710,10 +750,17 @@ def train(cfg: TrainConfig, ctx: dlt_dist.DistCtx, root: Path | None, state: dic
         shutil.rmtree(prof_dir, ignore_errors=True)
     if root and stopped_by is None:
         save_ckpt(step)  # the run is complete; later links of a chain see it and exit
+    finish_pending()
     if val is not None:
         run_eval(step)
-    if cfg.adapter_out and cfg.peft and stopped_by is None and ctx.is_main:
-        getattr(model, "module", model).save_pretrained(cfg.adapter_out)  # adapter weights + config only
+    if cfg.adapter_out and cfg.peft and stopped_by is None:
+        from torch.distributed.checkpoint.state_dict import StateDictOptions, get_model_state_dict
+
+        # every rank joins the gather (FSDP1 shards the adapter); rank 0 writes adapter weights + config
+        opts = StateDictOptions(full_state_dict=True, ignore_frozen_params=True, cpu_offload=True)
+        adapter_sd = get_model_state_dict(model, options=opts)
+        if ctx.is_main:
+            getattr(model, "module", model).save_pretrained(cfg.adapter_out, state_dict=adapter_sd)
     state["phase"] = "report"
 
     # timing: skip warmup steps and any profiled steps

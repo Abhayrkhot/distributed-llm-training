@@ -36,14 +36,18 @@ GIB = 2**30
 SPECIAL = {"<|endoftext|>": 151643, "<|im_start|>": 151644, "<|im_end|>": 151645}
 
 
-def bnb_config():
+def bnb_config(storage: torch.dtype | None = None):
+    """NF4, double quantization, BF16 compute. ``storage=torch.bfloat16`` packs the 4-bit weights in BF16
+    tensors so FSDP1 can flatten them with the BF16 norms (the documented FSDP-QLoRA setup)."""
     from transformers import BitsAndBytesConfig
 
+    extra = {"bnb_4bit_quant_storage": storage} if storage is not None else {}
     return BitsAndBytesConfig(
         load_in_4bit=True,
         bnb_4bit_quant_type="nf4",
         bnb_4bit_use_double_quant=True,
         bnb_4bit_compute_dtype=torch.bfloat16,
+        **extra,
     )
 
 

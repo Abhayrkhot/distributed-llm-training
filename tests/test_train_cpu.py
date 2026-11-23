@@ -509,3 +509,72 @@ def test_bird_evaluate_oracle_and_adapter(tmp_path):
     assert tuned["questions"] == 8 and tuned["adapter"] == "adapter" and 0.0 <= tuned["ex"] <= 1.0
     lines = (tmp_path / "eval" / "tuned.jsonl").read_text().splitlines()
     assert len(lines) == 8 and {"pred", "correct", "pred_error"} <= set(json.loads(lines[0]))
+
+
+def _no_gpu() -> bool:
+    import torch
+
+    return not torch.cuda.is_available()
+
+
+@pytest.mark.skipif(
+    _no_gpu(), reason="FSDP1 needs an accelerator; this parity check runs on H200s in Phase 7"
+)
+def test_lora_sft_fsdp1_matches_single_and_exports(tmp_path):
+    fx = make_sft_fixture(tmp_path)
+    single = sft_run(tmp_path, fx, "single", "backend=single", "micro_batch=2")
+    fsdp1 = sft_run(
+        tmp_path,
+        fx,
+        "fsdp1",
+        "backend=fsdp1",
+        "micro_batch=2",
+        f"adapter_out={tmp_path / 'adapter'}",
+        nproc=2,
+    )
+    np.testing.assert_allclose(fsdp1["metrics"]["loss"], single["metrics"]["loss"], rtol=1e-5)
+    assert fsdp1["summary"]["adapter_audit"]["frozen_unchanged_after_step"]
+    from safetensors.torch import load_file
+
+    w = load_file(tmp_path / "adapter" / "adapter_model.safetensors")
+    assert w and all("lora_" in k for k in w)
+
+
+@pytest.mark.parametrize("nproc", [1, 2])
+def test_async_checkpoint_resume_is_bit_exact(tmp_path, tokens, nproc):
+    full = run(tmp_path, tokens, "full", nproc=nproc)
+    ck = tmp_path / "ck"
+    first = run(
+        tmp_path,
+        tokens,
+        "first",
+        f"ckpt_dir={ck}",
+        "ckpt_every=2",
+        "stop_at_step=5",
+        "async_ckpt=true",
+        nproc=nproc,
+    )
+    saves = first["summary"]["checkpoints"]
+    assert [c["step"] for c in saves] == [2, 4, 5] and all(c["async"] for c in saves)
+    assert all(c["blocking_s"] <= c["total_s"] for c in saves)
+    second = run(tmp_path, tokens, "second", f"ckpt_dir={ck}", "async_ckpt=true", nproc=nproc)
+    assert second["summary"]["resumed_from"] == "step_00000005"
+    assert second["metrics"]["loss"] == full["metrics"]["loss"][5:]
+
+
+def test_sigterm_is_a_graceful_stop_only_when_asked(tmp_path, tokens):
+    ck = tmp_path / "ck"
+    r = run(tmp_path, tokens, "term", f"ckpt_dir={ck}", "term_at_step=3", "stop_on_term=true")
+    assert r["summary"]["stopped_by"] == "signal" and r["summary"]["end_step"] == 4
+    assert (ck / "step_00000004" / "meta.json").exists()
+    ck2 = tmp_path / "ck2"
+    run(tmp_path, tokens, "killed", f"ckpt_dir={ck2}", "term_at_step=3", expect_rc=1)  # default: TERM kills
+    assert not any(p.name.startswith("step_") and not p.name.endswith(".tmp") for p in ck2.glob("*"))
+
+
+def test_crash_during_eval_keeps_the_final_checkpoint(tmp_path, tokens):
+    ck = tmp_path / "ck"
+    v = (f"val_data={tokens}", "eval_samples=8")
+    run(tmp_path, tokens, "evalcrash", *v, f"ckpt_dir={ck}", "crash_in_eval=true", expect_rc=1)
+    assert (ck / "step_00000008" / "meta.json").exists()  # the run had finished: only the eval is lost
+    assert run(tmp_path, tokens, "again", *v, f"ckpt_dir={ck}") is None  # the next link sees it complete
