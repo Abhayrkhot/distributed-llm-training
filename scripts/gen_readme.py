@@ -773,6 +773,119 @@ def faults_section() -> str:
     return "\n".join(lines)
 
 
+def summary_section() -> str:
+    """Headline numbers, each computed from the same records as the detailed tables below."""
+    rows = []
+    entries = {e: _ok(v) for e, v in _p3_entries().items() if _ok(v)}
+    if entries:
+        best = max(entries.items(), key=lambda kv: _med([r["summary"]["mfu"] for r in kv[1]]))
+        effs = []
+        for e, v in entries.items():
+            if v[0]["summary"]["world_size"] == 2 and v[0]["config"]["backend"] == "ddp":
+                one = entries.get(e.replace("-ddp", "-single"))
+                if one:
+                    effs.append(
+                        _med([r["summary"]["tokens_per_s"] for r in v])
+                        / (2 * _med([r["summary"]["tokens_per_s"] for r in one]))
+                    )
+        rows.append(
+            (
+                "Full-parameter training, Qwen2.5 0.5B-14B, 1-2 H200s",
+                f"up to {100 * _med([r['summary']['mfu'] for r in best[1]]):.1f}% MFU "
+                f"untuned ({best[0]}); DDP 1->2 GPU scaling {100 * min(effs):.1f}-{100 * max(effs):.1f}%"
+                if effs
+                else "",
+                "docs/phase3.md",
+            )
+        )
+    p4c = _p3_entries("p4c.")
+    if p4c and _ok(p4c.get("7b-best", [])) and _ok(p4c.get("7b-base", [])):
+        b = _med([r["summary"]["tokens_per_s"] for r in _ok(p4c["7b-base"])])
+        tuned = _ok(p4c["7b-best"])
+        t_ = _med([r["summary"]["tokens_per_s"] for r in tuned])
+        rows.append(
+            (
+                "Profiler-guided tuning, 7B FSDP2 on 2 H200s",
+                f"{100 * (t_ - b) / b:+.0f}% tokens/s, "
+                f"{100 * _med([r['summary']['mfu'] for r in tuned]):.1f}% MFU",
+                "docs/phase4.md",
+            )
+        )
+    phase3 = [r for v in _p3_entries().values() for r in _ok(v)]
+    if phase3:
+        e = [
+            (_predict_now(r) - max(r["summary"]["peak_alloc_gib_by_rank"]))
+            / max(r["summary"]["peak_alloc_gib_by_rank"])
+            for r in phase3
+        ]
+        p4 = [r for v in _p3_entries("p4.").values() for r in _ok(v)]
+        e4 = [
+            (_predict_now(r) - max(r["summary"]["peak_alloc_gib_by_rank"]))
+            / max(r["summary"]["peak_alloc_gib_by_rank"])
+            for r in p4
+        ]
+        txt = f"median error {100 * _med(sorted(abs(x) for x in e)):.1f}% on {len(e)} runs"
+        if e4:
+            txt += f", {100 * _med(sorted(abs(x) for x in e4)):.1f}% out of sample ({len(e4)} runs)"
+        rows.append(("Analytical peak-memory predictor", txt, "docs/phase3.md"))
+    c = _by_name("eval").get("nf4-vs-bf16")
+    if c:
+        cs = c["summary"]
+        rows.append(
+            (
+                "Qwen2.5-72B in NF4 vs BF16",
+                f"next-token agreement {100 * cs['argmax_agreement_sql']:.1f}% on SQL tokens, "
+                f"perplexity gap {100 * cs['ppl_sql_gap']:+.2f}%",
+                "docs/phase5.md",
+            )
+        )
+    evs = {}
+    for r in load_records(ROOT / "results", "eval"):
+        s = r["summary"]
+        if (
+            s.get("split") == "dev"
+            and s.get("mode") in ("base", "finetuned")
+            and not s["name"].endswith("-repro")
+        ):
+            evs[s["mode"]] = r
+    if "base" in evs:
+        b = evs["base"]["summary"]
+        if "finetuned" in evs:
+            import sys as _sys
+
+            _sys.path.insert(0, str(ROOT / "src"))
+            from dlt.bird.execute import paired_bootstrap_gain
+
+            a, f = _correct_by_qid(evs["base"]), _correct_by_qid(evs["finetuned"])
+            q = sorted(set(a) & set(f))
+            gain, lo, hi = paired_bootstrap_gain([bool(a[i]) for i in q], [bool(f[i]) for i in q])
+            fs = evs["finetuned"]["summary"]
+            txt = (
+                f"{100 * b['ex']:.1f}% -> {100 * fs['ex']:.1f}% execution accuracy on BIRD dev, "
+                f"{100 * gain:+.1f} points (95% CI {100 * lo:+.1f} to {100 * hi:+.1f})"
+            )
+        else:
+            txt = f"base 3-shot {100 * b['ex']:.1f}% on BIRD dev; fine-tune in progress"
+        rows.append(("72B QLoRA on one H200, BIRD text-to-SQL", txt, "docs/phase6.md"))
+    recs = _latest_by_name()
+    if recs.get("p8-sync") and recs.get("p8-async"):
+        blk = lambda r: _med([c.get("blocking_s", c["total_s"]) for c in r["summary"]["checkpoints"]])  # noqa: E731
+        rows.append(
+            (
+                "Fault tolerance",
+                "every injected failure resumes bit-exact; async checkpoints stall "
+                f"{blk(recs['p8-async']):.1f} s "
+                f"instead of {blk(recs['p8-sync']):.1f} s per 18 GiB save",
+                "docs/phase8.md",
+            )
+        )
+    if not rows:
+        return "_No results yet._"
+    lines = ["| Result | Number | Details |", "|---|---|---|"]
+    lines += [f"| {a} | {b} | [{c.split('/')[-1]}]({c}) |" for a, b, c in rows]
+    return "\n".join(lines)
+
+
 SECTIONS = {
     "hardware": hardware_section,
     "nccl": nccl_section,
@@ -789,6 +902,7 @@ SECTIONS = {
     "bird": bird_section,
     "qlora": qlora_section,
     "faults": faults_section,
+    "summary": summary_section,
 }
 
 
