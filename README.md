@@ -270,7 +270,8 @@ Each change against its workload's baseline, both run 3 times in the same sweep.
 | 7b-best | 22,720 (22,716-22,755) | +58.0% | 51.6% | 110.5 | 0.86/1.98/0.05 | 0.062 | 0.047 |
 | 7b-best-flash | 22,765 (22,752-22,771) | +58.3% | 51.7% | 110.5 | 0.86/1.97/0.05 | 0.057 | 0.047 |
 | 1p5b-base | 64,295 (64,266-64,376) | baseline | 33.5% | 73.5 | 0.32/0.68/0.02 | 0.010 | 0.049 |
-| 1p5b-best | 87,527 | +36.1% | 45.7% | 107.4 | 0.25/0.48/0.02 | 0.008 | 0.017 |
+| 1p5b-best | 87,692 (87,527-87,862) | +36.4% | 45.8% | 107.4 | 0.25/0.48/0.02 | 0.017 | 0.016 |
+| 1p5b-best-flash | 84,455 (84,428-84,777) | +31.4% | 44.1% | 107.4 | 0.25/0.50/0.02 | 0.007 | 0.017 |
 <!-- /gen:tuning -->
 
 <!-- gen:profile -->
@@ -304,6 +305,7 @@ Execution accuracy (EX): the predicted SQL returns the same set of rows as the g
 
 | Run | Model | Split | Questions | EX | 95% CI | Simple / moderate / challenging |
 |---|---|---|---|---|---|---|
+| base-dev | base | dev | 1534 | 46.1% | 43.6-48.6 | 56.9 / 38.6 / 20.3 |
 | base-val | base | val | 880 | 55.5% | 52.2-58.8 | - |
 | instruct-val | instruct | val | 880 | 70.2% | 67.2-73.3 | - |
 <!-- /gen:bird -->
@@ -314,12 +316,29 @@ Execution accuracy (EX): the predicted SQL returns the same set of rows as the g
 | Run | Backend x GPUs | r | Steps | Stopped by | Loss first -> last | Val loss | Tokens/s | MFU | Peak GPU (GiB) | Audit |
 |---|---|---|---|---|---|---|---|---|---|---|
 | p6-overfit | single x 1 | 16 | 0-120 | finished | 0.709 -> 0.000 | - | 944 | 28.7% | 47.6 | 210.5M LoRA params, base unchanged |
+| p6.r16.r0 | single x 1 | 16 | 0-40 | finished | 0.672 -> 0.116 | 0.1531 | 905 | 27.3% | 51.9 | 210.5M LoRA params, base unchanged |
+| p8-72b-resume-then-term | single x 1 | 16 | 10-18 | signal | 0.157 -> 0.281 | - | 901 | 27.2% | 51.5 | 210.5M LoRA params, base unchanged |
+| p8-72b-final | single x 1 | 16 | 18-24 | finished | 0.146 -> 0.177 | - | 931 | 28.1% | 51.8 | 210.5M LoRA params, base unchanged |
+| p6.r64.r0 | single x 1 | 64 | 0-40 | finished | 0.672 -> 0.110 | 0.1466 | 904 | 27.3% | 61.4 | 842.1M LoRA params, base unchanged |
 <!-- /gen:qlora -->
 
 ## Fault tolerance (Phase 8)
 
 <!-- gen:faults -->
-_No fault-injection runs yet._
+Qwen2.5-1.5B, FSDP2 on 2 H200s, deterministic mode, checkpoints every 10 steps. "Matches" means every per-step loss after the resume equals the uninterrupted run's. Lost work is steps recomputed.
+
+| Failure | Resumed from | Lost steps | Restore (s) | Matches uninterrupted |
+|---|---|---|---|---|
+| SIGKILL mid-step (before step 25) | step 20 | see log | 29.8 | yes |
+| SIGKILL after writing, before publishing the step-30 checkpoint | step 20 | see log | 5.8 | yes |
+| SIGKILL during the end-of-run evaluation | run already complete; next link exits | 0 | - | - |
+| SIGTERM with stop_on_term | - | - | - | - |
+| SIGTERM, default action | - | - | - | - |
+
+| Checkpoint | Size (GiB) | Training blocked per save (s) | Save complete (s) | Median step (s) |
+|---|---|---|---|---|
+| synchronous DCP | 18.1 | 35.2 | 35.2 | 0.390 |
+| DCP async_save | 18.1 | 1.9 | 40.6 | 0.378 |
 <!-- /gen:faults -->
 
 ## Layout

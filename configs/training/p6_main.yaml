@@ -1,12 +1,14 @@
 # Phase 6 main run: Qwen2.5-72B QLoRA on BIRD train, one epoch, on one H200, submitted as chained 3 h
 # jobs (slurm/phase6_main.sbatch) so it spans at least two Slurm jobs on purpose: each job stops on
 # Slurm's USR1, checkpoints the adapter (with optimizer, scheduler, RNG and step) and the next resumes.
-# Rank and sequence length follow the p6 sweep (docs/phase6.md).
+# Rank and sequence length from the p6 sweep (docs/phase6.md): r=64 reached 4% lower validation loss than
+# r=16 at the same throughput (0.147 vs 0.153 after 640 questions, 61 vs 52 GiB); 4,096 tokens keeps the
+# schema-with-rows prompts dev is evaluated with (dev prompts reach 4,246 tokens).
 model: ${DLT_HOME}/models/qwen2.5-72b-nf4
 quant: nf4
 peft: lora
-lora_r: 16
-lora_alpha: 32
+lora_r: 64
+lora_alpha: 128
 lora_dropout: 0.05
 task: sft
 data: ${DLT_HOME}/data/bird/train.jsonl
