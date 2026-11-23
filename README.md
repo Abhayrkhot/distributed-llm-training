@@ -306,6 +306,7 @@ Execution accuracy (EX): the predicted SQL returns the same set of rows as the g
 | Run | Model | Split | Questions | EX | 95% CI | Simple / moderate / challenging |
 |---|---|---|---|---|---|---|
 | base-dev | base | dev | 1534 | 46.1% | 43.6-48.6 | 56.9 / 38.6 / 20.3 |
+| instruct-dev | instruct | dev | 1534 | 58.9% | 56.5-61.4 | 70.2 / 53.3 / 27.7 |
 | base-val | base | val | 880 | 55.5% | 52.2-58.8 | - |
 | instruct-val | instruct | val | 880 | 70.2% | 67.2-73.3 | - |
 <!-- /gen:bird -->
@@ -321,6 +322,7 @@ Execution accuracy (EX): the predicted SQL returns the same set of rows as the g
 | p8-72b-final | single x 1 | 16 | 18-24 | finished | 0.146 -> 0.177 | - | 931 | 28.1% | 51.8 | 210.5M LoRA params, base unchanged |
 | p6.r64.r0 | single x 1 | 64 | 0-40 | finished | 0.672 -> 0.110 | 0.1466 | 904 | 27.3% | 61.4 | 842.1M LoRA params, base unchanged |
 | p6.r16-len2048.r0 | single x 1 | 16 | 0-40 | finished | 0.644 -> 0.175 | 0.1537 | 836 | 24.9% | 47.6 | 210.5M LoRA params, base unchanged |
+| p6.r16-sdpa-efficient.r0 | single x 1 | 16 | 0-40 | finished | 0.673 -> 0.116 | 0.1511 | 867 | 26.2% | 51.9 | 210.5M LoRA params, base unchanged |
 <!-- /gen:qlora -->
 
 ## Fault tolerance (Phase 8)
