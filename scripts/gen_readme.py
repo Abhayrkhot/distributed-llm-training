@@ -712,43 +712,42 @@ def faults_section() -> str:
     if not ref:
         return "_No fault-injection runs yet._"
     full = ref["metrics"]["loss"]
+    # (label, the step the failure hit, the resumed run). A killed run writes no record, so the failure
+    # point comes from the scenario's configuration in slurm/phase8_faults.sbatch.
     scen = [
-        ("kill-step", "SIGKILL mid-step (before step 25)", "p8-kill-step", "p8-kill-step-resume"),
-        (
-            "kill-save",
-            "SIGKILL after writing, before publishing the step-30 checkpoint",
-            "p8-kill-save",
-            "p8-kill-save-resume",
-        ),
-        ("kill-eval", "SIGKILL during the end-of-run evaluation", "p8-kill-eval", "p8-kill-eval-resume"),
-        ("term-graceful", "SIGTERM with stop_on_term", "p8-term-graceful", "p8-term-graceful-resume"),
-        ("term-default", "SIGTERM, default action", "p8-term-default", "p8-term-default-resume"),
+        ("SIGKILL mid-step (before step 25)", 25, "p8-kill-step-resume"),
+        ("SIGKILL after writing, before publishing, the step-30 checkpoint", 30, "p8-kill-save-resume"),
+        ("SIGTERM with stop_on_term (before step 25)", None, "p8-term-graceful-resume"),
+        ("SIGTERM, default action (before step 25)", 25, "p8-term-default-resume"),
     ]
+    step_s = ref["summary"]["step_time_s_median"]
     lines = [
         'Qwen2.5-1.5B, FSDP2 on 2 H200s, deterministic mode, checkpoints every 10 steps. "Matches" means '
-        "every per-step loss after the resume equals the uninterrupted run's. Lost work is steps recomputed.",
+        "every per-step loss after the resume equals the uninterrupted run's. Lost steps are the steps "
+        "recomputed after the resume; their time is lost steps x the median step, plus the restart.",
         "",
-        "| Failure | Resumed from | Lost steps | Restore (s) | Matches uninterrupted |",
+        "| Failure | Resumed from | Lost steps (s) | Restart: load + restore (s) | Matches uninterrupted |",
         "|---|---|---|---|---|",
     ]
-    for _, label, _killed, resumed in scen:
+    for label, hit, resumed in scen:
         r = recs.get(resumed)
         if not r:
-            lines.append(
-                f"| {label} | run already complete; next link exits | 0 | - | - |"
-                if "eval" in label
-                else f"| {label} | - | - | - | - |"
-            )
+            lines.append(f"| {label} | - | - | - | - |")
             continue
         s = r["summary"]
         k = s["start_step"]
-        pre = recs.get(_killed)
-        reached = pre["summary"]["end_step"] if pre else None
-        lost = "-"
-        if s["resumed_from"] is not None:
-            lost = str(max(0, (reached or k) - k)) if reached is not None else "see log"
+        lost = max(0, hit - k) if hit is not None else 0
+        load = max(s.get("load_s_by_rank") or [0])
         ok = r["metrics"]["loss"] == full[k : k + len(r["metrics"]["loss"])]
-        lines.append(f"| {label} | step {k} | {lost} | {s['restore_s'] or 0:.1f} | {'yes' if ok else 'NO'} |")
+        lines.append(
+            f"| {label} | step {k} | {lost} ({lost * step_s:.1f}) | {load:.0f} + {s['restore_s'] or 0:.0f} | "
+            f"{'yes' if ok else 'NO'} |"
+        )
+    if recs.get("p8-kill-eval") is None and "p8-kill-eval-resume" not in recs:
+        lines.append(
+            "| SIGKILL during the end-of-run evaluation | the final checkpoint; the next link finds the run "
+            "complete and exits | 0 (only the evaluation) | - | - |"
+        )
     sync, asy = recs.get("p8-sync"), recs.get("p8-async")
     if sync and asy:
 

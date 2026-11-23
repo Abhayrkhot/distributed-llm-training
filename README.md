@@ -320,20 +320,21 @@ Execution accuracy (EX): the predicted SQL returns the same set of rows as the g
 | p8-72b-resume-then-term | single x 1 | 16 | 10-18 | signal | 0.157 -> 0.281 | - | 901 | 27.2% | 51.5 | 210.5M LoRA params, base unchanged |
 | p8-72b-final | single x 1 | 16 | 18-24 | finished | 0.146 -> 0.177 | - | 931 | 28.1% | 51.8 | 210.5M LoRA params, base unchanged |
 | p6.r64.r0 | single x 1 | 64 | 0-40 | finished | 0.672 -> 0.110 | 0.1466 | 904 | 27.3% | 61.4 | 842.1M LoRA params, base unchanged |
+| p6.r16-len2048.r0 | single x 1 | 16 | 0-40 | finished | 0.644 -> 0.175 | 0.1537 | 836 | 24.9% | 47.6 | 210.5M LoRA params, base unchanged |
 <!-- /gen:qlora -->
 
 ## Fault tolerance (Phase 8)
 
 <!-- gen:faults -->
-Qwen2.5-1.5B, FSDP2 on 2 H200s, deterministic mode, checkpoints every 10 steps. "Matches" means every per-step loss after the resume equals the uninterrupted run's. Lost work is steps recomputed.
+Qwen2.5-1.5B, FSDP2 on 2 H200s, deterministic mode, checkpoints every 10 steps. "Matches" means every per-step loss after the resume equals the uninterrupted run's. Lost steps are the steps recomputed after the resume; their time is lost steps x the median step, plus the restart.
 
-| Failure | Resumed from | Lost steps | Restore (s) | Matches uninterrupted |
+| Failure | Resumed from | Lost steps (s) | Restart: load + restore (s) | Matches uninterrupted |
 |---|---|---|---|---|
-| SIGKILL mid-step (before step 25) | step 20 | see log | 29.8 | yes |
-| SIGKILL after writing, before publishing the step-30 checkpoint | step 20 | see log | 5.8 | yes |
-| SIGKILL during the end-of-run evaluation | run already complete; next link exits | 0 | - | - |
-| SIGTERM with stop_on_term | - | - | - | - |
-| SIGTERM, default action | - | - | - | - |
+| SIGKILL mid-step (before step 25) | step 20 | 5 (1.9) | 9 + 30 | yes |
+| SIGKILL after writing, before publishing, the step-30 checkpoint | step 20 | 10 (3.9) | 16 + 6 | yes |
+| SIGTERM with stop_on_term (before step 25) | step 26 | 0 (0.0) | 15 + 44 | yes |
+| SIGTERM, default action (before step 25) | step 20 | 5 (1.9) | 16 + 50 | yes |
+| SIGKILL during the end-of-run evaluation | the final checkpoint; the next link finds the run complete and exits | 0 (only the evaluation) | - | - |
 
 | Checkpoint | Size (GiB) | Training blocked per save (s) | Save complete (s) | Median step (s) |
 |---|---|---|---|---|
