@@ -74,4 +74,17 @@ optimum).
 
 ## 5. A real `scancel`
 
-PHASE8_SCANCEL
+[scripts/phase8_scancel.sh](../scripts/phase8_scancel.sh), from the login node, against a live 1.5B FSDP2
+job (one H200, checkpoints every 10 steps, `stop_on_term` on). Explorer's KillWait (the time between
+Slurm's SIGTERM and its SIGKILL) is 600 s.
+
+| How the job was stopped | What happened | Lost |
+|---|---|---|
+| `scancel <job>` (job 12085605) | Slurm sent SIGTERM to every process of the job, torchrun included. torchrun shut its worker down at once, in the middle of the periodic step-40 save (18 GB, about 50 s): the job ended CANCELLED, `step_00000040.tmp` was left half-written and ignored, and the resume (job 12085753) restarted from step 30. | 10 steps and a checkpoint write |
+| `scancel --batch --signal=USR1 <job>` (job 12085783) | only the batch shell got the signal; `slurm/launch.sh` forwarded USR1 to the worker, which finished the step-30 checkpoint (37 s), recorded `stopped_by=signal` and exited 0, 32 s after the signal; the job ended COMPLETED and the resume (job 12085851) continued at step 30. | nothing |
+
+So the 600 s KillWait does not protect a torchrun job: the SIGTERM handler in the training processes
+never gets to finish, because torchrun itself tears them down first. Stopping a job early without
+losing work means sending the same signal the wall-time limit sends, to the batch shell only:
+`scancel --batch --signal=USR1 <job>`. Plain `scancel` still loses at most one checkpoint interval,
+since an interrupted save is never published.
