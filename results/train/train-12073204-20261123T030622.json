@@ -1,0 +1,163 @@
+{
+  "schema_version": 1,
+  "kind": "train",
+  "run_id": "train-12073204-20261123T030622",
+  "created_at": "2026-11-23T03:06:22+00:00",
+  "git_sha": "81e12b6",
+  "lock_hash": "64701aa313f8",
+  "slurm": {
+    "job_id": "12073204",
+    "partition": "gpu-short",
+    "nodes": "d4055",
+    "gpus_on_node": "2",
+    "cpus_on_node": "16",
+    "host": "d4055"
+  },
+  "env": {
+    "python": "3.12.16",
+    "torch": "2.14.1+cu126",
+    "transformers": "5.24.0",
+    "peft": "0.22.0",
+    "bitsandbytes": "0.50.2",
+    "accelerate": "1.16.0",
+    "nvidia-nccl-cu12": "2.29.3",
+    "cuda_runtime": "12.6",
+    "nccl_runtime": "2.29.3"
+  },
+  "hardware": {
+    "gpu_name": "NVIDIA H200",
+    "gpu_count": 2,
+    "gpu_total_bytes": 150121545728,
+    "driver": "570.86.15"
+  },
+  "config": {
+    "model": "Qwen/Qwen2.5-0.5B",
+    "revision": "060db6499f32faf8b98477b0a26969ef7d8b9987",
+    "init": "pretrained",
+    "backend": "fsdp2",
+    "attn": "eager",
+    "activation_checkpointing": false,
+    "data": "/scratch/$USER/dlt/data/fineweb-edu-000/train.bin",
+    "seq_len": 1024,
+    "global_batch": 16,
+    "micro_batch": 4,
+    "seed": 0,
+    "val_data": "",
+    "eval_samples": 0,
+    "steps": 20,
+    "lr": 3e-05,
+    "min_lr_ratio": 0.1,
+    "warmup_steps": 5,
+    "weight_decay": 0.1,
+    "betas": [
+      0.9,
+      0.95
+    ],
+    "grad_clip": 1.0,
+    "deterministic": true,
+    "ckpt_dir": "/scratch/$USER/dlt/ckpt/phase2-12073204/fsdp2-crash",
+    "ckpt_every": 5,
+    "keep_ckpts": 2,
+    "resume": true,
+    "run_name": "det-fsdp2-recovered",
+    "max_seconds": 0.0,
+    "stop_at_step": -1,
+    "crash_at_step": -1,
+    "crash_in_save": false,
+    "write_record": true
+  },
+  "metrics": {
+    "first_step": 10,
+    "loss": [
+      2.6604671478271484,
+      2.72310471534729,
+      2.6014466285705566,
+      2.8010714054107666,
+      2.6928303241729736,
+      2.846982955932617,
+      2.731572389602661,
+      2.620976686477661,
+      2.783754825592041,
+      2.74613094329834
+    ],
+    "grad_norm": [
+      3.591428518295288,
+      3.527099847793579,
+      4.030653953552246,
+      3.8039464950561523,
+      3.755073308944702,
+      3.676067590713501,
+      3.5061843395233154,
+      3.588129997253418,
+      3.489109754562378,
+      3.6104302406311035
+    ],
+    "lr": [
+      2.067172942406179e-05,
+      1.791113425411332e-05,
+      1.5088865745886681e-05,
+      1.2328270575938213e-05,
+      9.750000000000003e-06,
+      7.466736814155419e-06,
+      5.578270575938212e-06,
+      4.1671363218248875e-06,
+      3.2950073900936235e-06,
+      3e-06
+    ],
+    "step_time_s": [
+      0.87289,
+      0.23703,
+      0.23529,
+      0.23593,
+      0.23445,
+      0.2412,
+      0.23646,
+      0.23623,
+      0.23594,
+      0.23656
+    ],
+    "val": []
+  },
+  "summary": {
+    "run_name": "det-fsdp2-recovered",
+    "backend": "fsdp2",
+    "world_size": 2,
+    "accum_steps": 2,
+    "start_step": 10,
+    "end_step": 20,
+    "resumed_from": "step_00000010",
+    "restore_s": 11.35,
+    "stopped_by": null,
+    "loss_first": 2.6604671478271484,
+    "loss_last": 2.74613094329834,
+    "val_loss_start": null,
+    "val_loss_end": null,
+    "step_time_s_median": 0.2362,
+    "tokens_per_s": 69356.5,
+    "mfu": 0.1132,
+    "hfu": 0.1132,
+    "peak_alloc_gib_by_rank": [
+      26.53,
+      26.53
+    ],
+    "peak_reserved_gib_by_rank": [
+      31.26,
+      31.26
+    ],
+    "checkpoints": [
+      {
+        "step": 15,
+        "write_s": 26.316384810954332,
+        "total_s": 26.75700674764812,
+        "bytes": 6476793037
+      },
+      {
+        "step": 20,
+        "write_s": 16.829130792990327,
+        "total_s": 17.37044310197234,
+        "bytes": 6476793005
+      }
+    ]
+  },
+  "notes": ""
+}
