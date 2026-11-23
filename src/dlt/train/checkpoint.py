@@ -10,6 +10,9 @@ Layout under ``ckpt_dir``::
 
 A checkpoint is written into ``*.tmp`` and renamed only after every rank has finished, so a crash
 during a save leaves the previous checkpoint as the latest complete one.
+
+With ``frozen=False`` (LoRA on a frozen base) only the trainable parameters and their optimizer state
+are saved and restored; the base comes from its own pinned checkpoint.
 """
 
 from __future__ import annotations
@@ -27,7 +30,7 @@ import numpy as np
 import torch
 import torch.distributed as dist
 import torch.distributed.checkpoint as dcp
-from torch.distributed.checkpoint.state_dict import get_state_dict, set_state_dict
+from torch.distributed.checkpoint.state_dict import StateDictOptions, get_state_dict, set_state_dict
 
 from dlt.dist import DistCtx
 
@@ -78,6 +81,7 @@ def save(
     meta: dict[str, Any],
     keep: int = 2,
     crash_before_publish: bool = False,
+    frozen: bool = True,
 ) -> dict[str, float]:
     t0 = time.perf_counter()
     tmp = root / f"step_{step:08d}.tmp"
@@ -88,7 +92,7 @@ def save(
             shutil.rmtree(stale, ignore_errors=True)
         tmp.mkdir()
     _barrier(ctx)
-    model_sd, optim_sd = get_state_dict(model, optimizer)
+    model_sd, optim_sd = get_state_dict(model, optimizer, options=_options(frozen))
     dcp.save({"model": model_sd, "optim": optim_sd}, checkpoint_id=str(tmp))
     torch.save(rng_state(), tmp / f"rank{ctx.rank}.pt")
     _barrier(ctx)
@@ -106,12 +110,22 @@ def save(
     return {"write_s": written - t0, "total_s": time.perf_counter() - t0, "bytes": size}
 
 
-def load(path: Path, model, optimizer, scheduler, ctx: DistCtx) -> dict[str, Any]:
+def _options(frozen: bool) -> StateDictOptions:
+    return StateDictOptions(ignore_frozen_params=not frozen)
+
+
+def load(path: Path, model, optimizer, scheduler, ctx: DistCtx, frozen: bool = True) -> dict[str, Any]:
     meta = read_meta(path)
-    model_sd, optim_sd = get_state_dict(model, optimizer)
+    model_sd, optim_sd = get_state_dict(model, optimizer, options=_options(frozen))
     state = {"model": model_sd, "optim": optim_sd}
     dcp.load(state, checkpoint_id=str(path))
-    set_state_dict(model, optimizer, model_state_dict=state["model"], optim_state_dict=state["optim"])
+    set_state_dict(
+        model,
+        optimizer,
+        model_state_dict=state["model"],
+        optim_state_dict=state["optim"],
+        options=StateDictOptions(ignore_frozen_params=not frozen, strict=frozen),
+    )
     scheduler.load_state_dict(meta["scheduler"])
     rank_file = path / f"rank{ctx.rank}.pt"
     if meta["world_size"] == ctx.world_size and rank_file.exists():

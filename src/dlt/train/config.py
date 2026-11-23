@@ -43,8 +43,21 @@ class TrainConfig:
     fsdp_hold_params: bool = False  # FSDP2: keep layers unsharded across the micro-batches of a step
     compile: bool = False  # torch.compile each decoder layer (fuses the elementwise ops)
     compile_backend: str = "inductor"  # aot_eager in CPU tests (no C++ toolchain needed)
+    # QLoRA (Phases 6-7): a frozen, optionally NF4-quantized base with LoRA adapters
+    quant: str = ""  # "" | nf4 (bitsandbytes, double quant, BF16 compute)
+    peft: str = ""  # "" | lora
+    lora_r: int = 16
+    lora_alpha: int = 32
+    lora_dropout: float = 0.0
+    lora_targets: list[str] = field(
+        default_factory=lambda: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+    )
+    adapter_out: str = ""  # save the final adapter here (peft save_pretrained) when the run completes
     # data
-    data: str = ""  # train.bin (flat uint32 tokens)
+    task: str = "lm"  # lm: packed tokens (train.bin) | sft: prompt -> completion examples (BIRD jsonl)
+    schemas: str = ""  # sft: BIRD schemas.json
+    sft_limit: int = 0  # sft: use only the first N examples by question id (the overfit test); 0 = all
+    data: str = ""  # lm: train.bin (flat uint32 tokens); sft: train.jsonl
     seq_len: int = 2048
     global_batch: int = 32  # sequences per optimizer step, across all ranks
     micro_batch: int = 4  # sequences per forward/backward on one rank
@@ -101,6 +114,14 @@ class TrainConfig:
             raise ValueError("profiler must be torch or nsys")
         if self.ac_every < 1 or self.loss_chunk < 0 or self.fsdp_prefetch < 0:
             raise ValueError("ac_every >= 1, loss_chunk >= 0 and fsdp_prefetch >= 0")
+        if self.task not in ("lm", "sft") or (self.task == "sft" and not self.schemas):
+            raise ValueError("task must be lm or sft; sft needs schemas")
+        if self.quant not in ("", "nf4") or self.peft not in ("", "lora"):
+            raise ValueError("quant must be '' or nf4; peft must be '' or lora")
+        if self.quant and not self.peft:
+            raise ValueError("a quantized base can only be trained through adapters (peft=lora)")
+        if self.peft and (self.backend == "fsdp2" or self.loss_chunk or self.compile or self.ac_every > 1):
+            raise ValueError("peft runs support single/ddp without loss_chunk, compile or ac_every")
         if self.eval_samples < 0 or (self.eval_samples and not self.val_data):
             raise ValueError("eval_samples needs val_data and must be >= 0")
 
@@ -146,7 +167,8 @@ def parse(argv: list[str] | None = None) -> TrainConfig:
     for item in args.set:
         k, _, v = item.partition("=")
         setattr(cfg, k, coerce(k, v))
-    for k in ("data", "val_data", "ckpt_dir", "profile_dir"):  # '${DLT_HOME}/...' expands inside the job
+    for k in ("data", "val_data", "ckpt_dir", "profile_dir", "schemas", "adapter_out", "model"):
+        # '${DLT_HOME}/...' expands inside the job
         setattr(cfg, k, os.path.expandvars(getattr(cfg, k)))
     cfg.validate()
     return cfg

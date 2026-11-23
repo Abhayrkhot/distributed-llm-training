@@ -35,6 +35,7 @@ memory statistics and the predicted peak, then exits with code 75 (torchrun stop
 from __future__ import annotations
 
 import contextlib
+import json
 import math
 import os
 import resource
@@ -89,12 +90,27 @@ def sharded_load(cfg: TrainConfig) -> bool:
     return cfg.backend == "fsdp2" and cfg.init == "pretrained" and cfg.sharded_load
 
 
-def build_model(cfg: TrainConfig):
+def build_model(cfg: TrainConfig, device: torch.device | None = None):
     from transformers import AutoConfig, AutoModelForCausalLM
 
     torch.manual_seed(cfg.seed)  # identical random init on every rank
     if sharded_load(cfg):
         model = loading.build_on_meta(cfg.model, cfg.resolved_revision(), cfg.attn)
+    elif cfg.quant == "nf4":
+        from dlt.qlora.nf4 import bnb_config
+
+        # quantized while loading, straight onto this rank's GPU; norms, embeddings and lm_head stay BF16.
+        # A local checkpoint saved already quantized (dlt.qlora.nf4 quantize) loads as it is.
+        local = Path(cfg.model) / "config.json"
+        prequantized = local.exists() and "quantization_config" in json.loads(local.read_text())
+        model = AutoModelForCausalLM.from_pretrained(
+            cfg.model,
+            revision=cfg.resolved_revision(),
+            quantization_config=None if prequantized else bnb_config(),
+            device_map={"": device.index if device is not None and device.type == "cuda" else 0},
+            dtype=torch.bfloat16,
+            attn_implementation=cfg.attn,
+        )
     elif cfg.init == "tiny":
         model = AutoModelForCausalLM.from_config(tiny_config(cfg.seq_len), attn_implementation=cfg.attn)
     elif cfg.init == "random":
@@ -119,7 +135,79 @@ def build_model(cfg: TrainConfig):
         # share it); applied before DDP/FSDP2 wrapping, whose hooks stay outside the compiled region
         for layer in model.model.layers:
             layer.compile(backend=cfg.compile_backend)
+    if cfg.peft == "lora":
+        from peft import LoraConfig, get_peft_model
+
+        # freezes every base parameter; the LoRA A matrices draw from the seeded RNG, B starts at zero
+        lora = LoraConfig(
+            r=cfg.lora_r,
+            lora_alpha=cfg.lora_alpha,
+            lora_dropout=cfg.lora_dropout,
+            target_modules=list(cfg.lora_targets),
+            bias="none",
+            task_type="CAUSAL_LM",
+        )
+        model = get_peft_model(model, lora)
     return model
+
+
+def expected_lora_params(shape: ModelShape, cfg: TrainConfig) -> int:
+    """r x (in + out) per adapted projection, summed over layers (PLAN.md 4.1: 210.5M for 72B, r=16)."""
+    h, kv, i = shape.hidden, shape.n_kv_heads * shape.head_dim, shape.intermediate
+    dims = {
+        "q_proj": (h, shape.attn_width),
+        "k_proj": (h, kv),
+        "v_proj": (h, kv),
+        "o_proj": (shape.attn_width, h),
+        "gate_proj": (h, i),
+        "up_proj": (h, i),
+        "down_proj": (i, h),
+    }
+    return shape.n_layers * sum(cfg.lora_r * sum(dims[t]) for t in cfg.lora_targets)
+
+
+def adapter_audit(model, opt, shape: ModelShape, cfg: TrainConfig) -> dict:
+    """Every trainable tensor is a LoRA tensor, the optimizer holds exactly those, and their count matches
+    the formula. Raises if any check fails; the record keeps the details."""
+    trainable = [(n, p) for n, p in model.named_parameters() if p.requires_grad]
+    opt_ids = {id(p) for g in opt.param_groups for p in g["params"]}
+    audit = {
+        "trainable_tensors": len(trainable),
+        "trainable_params": sum(p.numel() for _, p in trainable),
+        "expected_lora_params": expected_lora_params(shape, cfg),
+        "all_trainable_are_lora": all("lora_" in n for n, _ in trainable),
+        "optimizer_holds_only_trainable": opt_ids == {id(p) for _, p in trainable},
+        "frozen_tensors": sum(1 for _, p in model.named_parameters() if not p.requires_grad),
+        "trainable_dtypes": sorted({str(p.dtype) for _, p in trainable}),
+        "example_trainable": [n for n, _ in trainable[:4]],
+    }
+    ok = (
+        audit["all_trainable_are_lora"]
+        and audit["optimizer_holds_only_trainable"]
+        and audit["trainable_params"] == audit["expected_lora_params"]
+    )
+    if not ok:
+        raise RuntimeError(f"adapter audit failed: {audit}")
+    return audit
+
+
+@torch.no_grad()
+def frozen_fingerprint(model) -> list[tuple[str, int, int]]:
+    """Two integer checksums over the raw bytes of every frozen tensor (computed where the tensor lives).
+    Any write to a frozen parameter changes them; used to show one optimizer step leaves the base alone."""
+    out, chunk = [], 1 << 26
+    for name, p in model.named_parameters():
+        if p.requires_grad:
+            continue
+        raw = p.detach().contiguous().view(torch.uint8).flatten()
+        s1 = s2 = 0
+        for start in range(0, raw.numel(), chunk):  # int64 copies of 64M bytes at a time, not of the tensor
+            b = raw[start : start + chunk].to(torch.int64)
+            w = torch.arange(start, start + b.numel(), device=b.device, dtype=torch.int64) % 251 + 1
+            s1 += int(b.sum())
+            s2 += int((b * w).sum())
+        out.append((name, s1, s2))
+    return out
 
 
 def checkpoint_layers(model, every: int) -> list[int]:
@@ -207,7 +295,8 @@ def nvtx(cfg: TrainConfig, name: str):
 
 def wrap(model, cfg: TrainConfig, ctx: dlt_dist.DistCtx):
     on_meta = any(p.is_meta for p in model.parameters())
-    if not on_meta:
+    placed = getattr(model, "is_loaded_in_4bit", False)  # quantized models load onto their GPU and stay
+    if not on_meta and not placed:
         model.to(ctx.device)
     if cfg.backend == "single":
         if ctx.distributed:
@@ -292,7 +381,7 @@ def evaluate(model, val: PackedTokens, cfg: TrainConfig, ctx: dlt_dist.DistCtx, 
         x, y = x.to(ctx.device), y.to(ctx.device)
         with sdpa_context(cfg):
             total[0] += token_loss_sum(model, x, y, cfg, autocast)
-        total[1] += y.numel()
+        total[1] += (y != -100).sum()  # every target for packed tokens; the SQL tokens for SFT
     model.train()
     if ctx.distributed:
         dist.all_reduce(total)
@@ -405,9 +494,10 @@ def train(cfg: TrainConfig, ctx: dlt_dist.DistCtx, root: Path | None, state: dic
     state["accum"] = accum
 
     t_load = time.perf_counter()
-    model = build_model(cfg)
+    model = build_model(cfg, ctx.device)
     shape = ModelShape.from_hf_config(model.config)
-    state["predicted"] = _predicted(shape, cfg, ctx.world_size, accum)
+    # the predictor models full-parameter training; adapter runs on a frozen base are not covered
+    state["predicted"] = None if cfg.peft else _predicted(shape, cfg, ctx.world_size, accum)
     model = wrap(model, cfg, ctx)
     load_info: dict = {}
     if sharded_load(cfg):
@@ -417,15 +507,25 @@ def train(cfg: TrainConfig, ctx: dlt_dist.DistCtx, root: Path | None, state: dic
         torch.cuda.synchronize(ctx.device)
     load_s = time.perf_counter() - t_load
     opt, sched = make_optimizer(model, cfg, cuda)
+    audit = adapter_audit(model, opt, shape, cfg) if cfg.peft else None
+    frozen_before = frozen_fingerprint(model) if cfg.peft else None
 
-    data = PackedTokens(cfg.data, cfg.seq_len)
+    if cfg.task == "sft":
+        from transformers import AutoTokenizer
+
+        from dlt.data.sft import SFTExamples
+
+        tok = AutoTokenizer.from_pretrained(cfg.model, revision=cfg.resolved_revision())
+        data = SFTExamples(cfg.data, cfg.schemas, tok, cfg.seq_len, limit=cfg.sft_limit)
+    else:
+        data = PackedTokens(cfg.data, cfg.seq_len)
     order = GlobalOrder(len(data), cfg.global_batch, cfg.seed)
 
     start_step, resumed_from, restore_s = 0, None, None
     if root and cfg.resume and (found := ckpt.latest(root)):
         state["phase"] = "restore"
         t0 = time.perf_counter()
-        meta = ckpt.load(found, model, opt, sched, ctx)
+        meta = ckpt.load(found, model, opt, sched, ctx, frozen=not cfg.peft)
         restore_s = time.perf_counter() - t0
         start_step, resumed_from = meta["step"], found.name
         if ctx.is_main:
@@ -449,6 +549,7 @@ def train(cfg: TrainConfig, ctx: dlt_dist.DistCtx, root: Path | None, state: dic
             meta={"config": cfg.to_dict(), "git_sha": git_sha()},
             keep=cfg.keep_ckpts,
             crash_before_publish=cfg.crash_in_save,
+            frozen=not cfg.peft,  # adapter runs save the trainable tensors and their optimizer state
         )
         if ctx.is_main:
             print(
@@ -456,7 +557,12 @@ def train(cfg: TrainConfig, ctx: dlt_dist.DistCtx, root: Path | None, state: dic
             )
         saves.append({"step": step, **info})
 
-    val = PackedTokens(cfg.val_data, cfg.seq_len) if cfg.eval_samples else None
+    if not cfg.eval_samples:
+        val = None
+    elif cfg.task == "sft":  # held-out databases' questions; the loss covers their SQL tokens
+        val = SFTExamples(cfg.val_data, cfg.schemas, tok, cfg.seq_len)
+    else:
+        val = PackedTokens(cfg.val_data, cfg.seq_len)
     val_log: list[dict] = []
 
     def run_eval(step: int) -> None:
@@ -472,6 +578,7 @@ def train(cfg: TrainConfig, ctx: dlt_dist.DistCtx, root: Path | None, state: dic
 
     clock = Clock(cuda)
     losses, grad_norms, lrs = [], [], []
+    step_tokens: list[float] = []  # SFT: real (unpadded) tokens per step, all ranks
     times: dict[str, list[float]] = {"step": [], "fwd": [], "bwd": [], "opt": []}
     prof_first = start_step + cfg.profile_start if cfg.profile_steps else None
     prof, prof_dir, profiled = None, None, []
@@ -507,14 +614,32 @@ def train(cfg: TrainConfig, ctx: dlt_dist.DistCtx, root: Path | None, state: dic
         t0 = clock.now()
         fwd_bwd = []
         loss_sum = torch.zeros((), device=ctx.device)
-        mbs = order.micro_batches(step, ctx.rank, ctx.world_size, cfg.micro_batch)
+        if cfg.task == "sft":
+            mbs = data.micro_batches(order, step, ctx.rank, ctx.world_size, cfg.micro_batch)
+            # loss = summed CE / the step's target tokens on all ranks (x world: DDP averages grads)
+            counts = torch.tensor(
+                [
+                    sum(data.target_tokens(m) for m in mbs),
+                    sum(data.length(i) for m in mbs for i in m.tolist()),
+                ],
+                dtype=torch.float64,
+                device=ctx.device,
+            )
+            if ctx.distributed:
+                dist.all_reduce(counts)
+            n_target, n_real = float(counts[0]), float(counts[1])
+            step_tokens.append(n_real)
+        else:
+            mbs = order.micro_batches(step, ctx.rank, ctx.world_size, cfg.micro_batch)
         for i, idx in enumerate(mbs):
             x, y = data.batch(idx)
             x, y = x.to(ctx.device, non_blocking=True), y.to(ctx.device, non_blocking=True)
             with _no_grad_sync(model, cfg, ctx, last=i == len(mbs) - 1), sdpa_context(cfg):
                 f0 = clock.now()
                 with nvtx(cfg, "forward"):
-                    if cfg.loss_chunk:
+                    if cfg.task == "sft":
+                        loss = token_loss_sum(model, x, y, cfg, autocast) * ctx.world_size / n_target
+                    elif cfg.loss_chunk:
                         loss = token_loss_sum(model, x, y, cfg, autocast) / y.numel() / accum
                     else:  # the Phase 2/3 path, kept op for op
                         with torch.autocast(ctx.device.type, dtype=torch.bfloat16, enabled=autocast):
@@ -546,6 +671,11 @@ def train(cfg: TrainConfig, ctx: dlt_dist.DistCtx, root: Path | None, state: dic
         times["opt"].append(clock.dt(o0, o1))
         losses.append(loss_sum.item())
         grad_norms.append(_grad_norm(gnorm))
+        if frozen_before is not None and "frozen_unchanged_after_step" not in audit:
+            audit["frozen_unchanged_after_step"] = frozen_fingerprint(model) == frozen_before
+            if not audit["frozen_unchanged_after_step"]:
+                raise RuntimeError("a frozen base parameter changed during the first optimizer step")
+            frozen_before = None
         lrs.append(sched.get_last_lr()[0])
         if prof == "nsys":
             profiled.append(step)
@@ -582,6 +712,8 @@ def train(cfg: TrainConfig, ctx: dlt_dist.DistCtx, root: Path | None, state: dic
         save_ckpt(step)  # the run is complete; later links of a chain see it and exit
     if val is not None:
         run_eval(step)
+    if cfg.adapter_out and cfg.peft and stopped_by is None and ctx.is_main:
+        getattr(model, "module", model).save_pretrained(cfg.adapter_out)  # adapter weights + config only
     state["phase"] = "report"
 
     # timing: skip warmup steps and any profiled steps
@@ -589,10 +721,17 @@ def train(cfg: TrainConfig, ctx: dlt_dist.DistCtx, root: Path | None, state: dic
     keep = [k for k in range(warm, len(losses)) if start_step + k not in profiled]
     med = {k: _median([v[j] for j in keep]) for k, v in times.items()}
     step_med = med["step"]
-    tok_s = cfg.global_batch * cfg.seq_len / step_med if step_med else None
+    if cfg.task == "sft":  # variable-length examples: real tokens over time, per timed step
+        rates = [step_tokens[j] / times["step"][j] for j in keep]
+        tok_s = statistics.median(rates) if rates else None
+        mean_len = sum(step_tokens) / max(1, len(step_tokens)) / cfg.global_batch
+    else:
+        tok_s = cfg.global_batch * cfg.seq_len / step_med if step_med else None
+        mean_len = cfg.seq_len
     gpu = torch.cuda.get_device_name(ctx.device) if cuda else None
-    fpt = train_flops_per_token(shape, cfg.seq_len, "full")
-    hfpt = train_flops_per_token(shape, cfg.seq_len, "full", recompute=cfg.activation_checkpointing)
+    flop_mode = "qlora" if cfg.peft else "full"
+    fpt = train_flops_per_token(shape, round(mean_len), flop_mode)
+    hfpt = train_flops_per_token(shape, round(mean_len), flop_mode, recompute=cfg.activation_checkpointing)
     mem = [
         torch.cuda.max_memory_allocated(ctx.device) / GIB if cuda else 0.0,
         torch.cuda.max_memory_reserved(ctx.device) / GIB if cuda else 0.0,
@@ -610,7 +749,7 @@ def train(cfg: TrainConfig, ctx: dlt_dist.DistCtx, root: Path | None, state: dic
     if ctx.is_main and cfg.write_record:
         m = mfu(fpt, tok_s, ctx.world_size, gpu) if tok_s else None
         h = mfu(hfpt, tok_s, ctx.world_size, gpu) if tok_s else None
-        pred = state["predicted"]["total"]
+        pred = state["predicted"]["total"] if state["predicted"] else None
         peak = max(r[0] for r in by_rank)
         summary = {
             "run_name": cfg.run_name,
@@ -648,7 +787,7 @@ def train(cfg: TrainConfig, ctx: dlt_dist.DistCtx, root: Path | None, state: dic
             **({"load_read_gib": round(load_info["load_read_bytes"] / GIB, 2)} if load_info else {}),
             "predicted_gib": pred,
             "predictor_version": PREDICTOR_VERSION,
-            "predicted_error": round((pred - peak) / peak, 4) if cuda and peak else None,
+            "predicted_error": round((pred - peak) / peak, 4) if cuda and peak and pred else None,
             "comm_by_rank": (
                 [{k: round(v, 5) for k, v in zip(comm_keys, c, strict=True)} for c in comm_by_rank]
                 if comm_by_rank
@@ -656,6 +795,14 @@ def train(cfg: TrainConfig, ctx: dlt_dist.DistCtx, root: Path | None, state: dic
             ),
             "profiled_steps": profiled,
             "checkpoints": saves,
+            "task": cfg.task,
+            "peft": cfg.peft or None,
+            "quant": cfg.quant or None,
+            "adapter_audit": audit,
+            "mean_tokens_per_sequence": round(mean_len, 1) if cfg.task == "sft" else None,
+            "sft_examples": len(data) if cfg.task == "sft" else None,
+            "sft_dropped_too_long": data.dropped if cfg.task == "sft" else None,
+            "flops_per_token": fpt,
         }
         metrics = {
             "first_step": start_step,

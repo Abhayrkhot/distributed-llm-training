@@ -1,0 +1,23 @@
+# Phase 6 overfit test: the 72B QLoRA setup on the first 64 BIRD train questions, trained toward zero
+# loss. Passes if the training loss falls close to zero (the adapter can memorize what it sees).
+model: ${DLT_HOME}/models/qwen2.5-72b-nf4
+quant: nf4
+peft: lora
+lora_r: 16
+lora_alpha: 32
+task: sft
+data: ${DLT_HOME}/data/bird/train.jsonl
+schemas: ${DLT_HOME}/data/bird/schemas.json
+sft_limit: 64
+seq_len: 4096
+global_batch: 8
+micro_batch: 1
+backend: single
+activation_checkpointing: true
+steps: 120
+lr: 2.0e-4
+min_lr_ratio: 0.1
+warmup_steps: 5
+weight_decay: 0.0
+timing_warmup: 3
+run_name: p6-overfit

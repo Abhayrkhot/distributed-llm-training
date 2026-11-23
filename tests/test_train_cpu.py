@@ -295,3 +295,217 @@ def test_compiled_layers_match_eager(tmp_path, tokens, nproc, backend):
         nproc=nproc,
     )
     np.testing.assert_allclose(compiled["metrics"]["loss"], eager["metrics"]["loss"], rtol=1e-5)
+
+
+def make_sft_fixture(root: Path) -> dict:
+    """A tiny Qwen2 checkpoint with a word-level tokenizer, BIRD-style questions and schemas (no network)."""
+    import torch
+    from tokenizers import Tokenizer, models, pre_tokenizers
+    from transformers import AutoModelForCausalLM, PreTrainedTokenizerFast, Qwen2Config
+
+    from dlt.bird.prompt import prompt, target
+
+    rows = []
+    for i in range(24):
+        db = f"db{i % 2}"
+        n = i % 6
+        rows.append(
+            {
+                "question_id": i,
+                "db_id": db,
+                "question": f"how many rows where x equals {n} ?",
+                "evidence": "x is a column" if i % 3 else "",
+                "sql": f"SELECT count ( * ) FROM t WHERE x = {n}",
+            }
+        )
+    schemas = {
+        f"db{j}": {
+            "ddl": f"CREATE TABLE t ( x INTEGER , y{j} TEXT ) ;",
+            "ddl_rows": f"CREATE TABLE t ( x INTEGER , y{j} TEXT ) ;\n-- t row : ( 1 , 'a' )",
+        }
+        for j in range(2)
+    }
+    words = set()
+    for r in rows:
+        for s in schemas[r["db_id"]].values():
+            words |= set((prompt(r, s) + target(r)).split())
+    vocab = {w: i for i, w in enumerate(["[UNK]", "<|endoftext|>", *sorted(words)])}
+    tk = Tokenizer(models.WordLevel(vocab=vocab, unk_token="[UNK]"))
+    tk.pre_tokenizer = pre_tokenizers.WhitespaceSplit()
+    tok = PreTrainedTokenizerFast(
+        tokenizer_object=tk, eos_token="<|endoftext|>", pad_token="<|endoftext|>", unk_token="[UNK]"
+    )
+    model_dir = root / "tiny-lm"
+    cfg = Qwen2Config(
+        vocab_size=len(vocab),
+        hidden_size=64,
+        intermediate_size=128,
+        num_hidden_layers=2,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        max_position_embeddings=256,
+        tie_word_embeddings=False,
+        eos_token_id=1,
+        pad_token_id=1,
+    )
+    torch.manual_seed(0)
+    AutoModelForCausalLM.from_config(cfg).save_pretrained(model_dir)
+    tok.save_pretrained(model_dir)
+    data = root / "bird"
+    data.mkdir()
+    (data / "train.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows[:16]))
+    (data / "val.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows[16:]))
+    (data / "schemas.json").write_text(json.dumps(schemas))
+    import sqlite3
+
+    (data / "databases").mkdir()
+    for j in range(2):
+        con = sqlite3.connect(data / "databases" / f"db{j}.sqlite")
+        con.execute(f"CREATE TABLE t (x INTEGER, y{j} TEXT)")
+        con.executemany("INSERT INTO t VALUES (?, ?)", [(k % 6, f"v{k}") for k in range(20)])
+        con.commit()
+        con.close()
+    return {"model": model_dir, "data": data, "tokenizer": tok}
+
+
+def test_sft_examples_mask_prompt_and_padding(tmp_path):
+    from dlt.data.packed import GlobalOrder
+    from dlt.data.sft import SFTExamples
+
+    fx = make_sft_fixture(tmp_path)
+    ds = SFTExamples(fx["data"] / "train.jsonl", fx["data"] / "schemas.json", fx["tokenizer"], max_len=128)
+    assert len(ds) == 16 and ds.dropped == 0
+    import torch
+
+    x, y = ds.batch(torch.tensor([0, 1]))
+    for row, e in enumerate(ds.items[:2]):
+        n = len(e.ids) - 1
+        assert x[row, :n].tolist() == list(e.ids[:-1])
+        assert (y[row, : e.n_prompt - 1] == -100).all() and (y[row, n:] == -100).all()
+        assert y[row, e.n_prompt - 1 : n].tolist() == list(e.ids[e.n_prompt :])  # SQL + eos
+    assert ds.target_tokens(torch.tensor([0, 1])) == int((y != -100).sum())
+    order = GlobalOrder(len(ds), 8, 0)
+    r0 = ds.micro_batches(order, 0, 0, 2, 2)
+    r1 = ds.micro_batches(order, 0, 1, 2, 2)
+    got = sorted(i for m in r0 + r1 for i in m.tolist())
+    assert got == sorted(order.global_indices(0).tolist())  # the same examples, dealt round-robin by length
+    tight = SFTExamples(fx["data"] / "train.jsonl", fx["data"] / "schemas.json", fx["tokenizer"], max_len=12)
+    assert tight.dropped == 16
+
+
+def sft_run(tmp, fx, name, *sets, nproc=1):
+    base = (
+        "task=sft",
+        "init=pretrained",
+        f"model={fx['model']}",
+        f"schemas={fx['data'] / 'schemas.json'}",
+        "peft=lora",
+        "lora_r=4",
+        "seq_len=128",
+        "global_batch=4",
+        "micro_batch=1",
+        "steps=12",
+        "lr=1e-2",
+        "weight_decay=0.0",
+    )
+    return run(tmp, fx["data"] / "train.jsonl", name, *base, *sets, nproc=nproc)
+
+
+def test_lora_sft_learns_audits_and_exports(tmp_path):
+    fx = make_sft_fixture(tmp_path)
+    r = sft_run(
+        tmp_path,
+        fx,
+        "lora",
+        "steps=40",
+        "lora_r=16",
+        "warmup_steps=5",
+        f"adapter_out={tmp_path / 'adapter'}",
+        f"val_data={fx['data'] / 'val.jsonl'}",
+        "eval_samples=8",
+    )
+    s, a = r["summary"], r["summary"]["adapter_audit"]
+    assert s["peft"] == "lora" and s["task"] == "sft"
+    assert a["all_trainable_are_lora"] and a["optimizer_holds_only_trainable"]
+    # 2 layers x r=16 x (q 64+64, k 64+32, v 64+32, o 64+64, gate/up 64+128, down 128+64)
+    assert a["trainable_params"] == a["expected_lora_params"] == 2 * 16 * 1024
+    assert a["frozen_unchanged_after_step"]
+    loss = r["metrics"]["loss"]
+    # only the adapters train (a random frozen base and output layer): the loss falls, it cannot vanish
+    assert sum(loss[-4:]) < 0.85 * sum(loss[:4])
+    assert s["val_loss_end"] is not None
+    assert (tmp_path / "adapter" / "adapter_model.safetensors").exists()
+
+
+def test_lora_resume_is_bit_exact_and_saves_only_the_adapter(tmp_path):
+    fx = make_sft_fixture(tmp_path)
+    full = sft_run(tmp_path, fx, "full")
+    ck = tmp_path / "ck"
+    sft_run(tmp_path, fx, "first", f"ckpt_dir={ck}", "stop_at_step=5")
+    second = sft_run(tmp_path, fx, "second", f"ckpt_dir={ck}")
+    assert second["summary"]["resumed_from"] == "step_00000005"
+    assert second["metrics"]["loss"] == full["metrics"]["loss"][5:]
+    import torch.distributed.checkpoint as dcp
+
+    keys = dcp.FileSystemReader(str(ck / "step_00000012")).read_metadata().state_dict_metadata
+    model_keys = [k for k in keys if k.startswith("model.")]
+    assert model_keys and all("lora_" in k for k in model_keys)  # the adapter, never the frozen base
+
+
+def test_lora_sft_ddp_matches_single(tmp_path):
+    fx = make_sft_fixture(tmp_path)
+    single = sft_run(tmp_path, fx, "single", "backend=single", "global_batch=4", "micro_batch=2")
+    ddp = sft_run(tmp_path, fx, "ddp", "backend=ddp", "global_batch=4", "micro_batch=2", nproc=2)
+    np.testing.assert_allclose(ddp["metrics"]["loss"], single["metrics"]["loss"], rtol=1e-5)
+
+
+def test_bird_evaluate_oracle_and_adapter(tmp_path):
+    fx = make_sft_fixture(tmp_path)
+    sft_run(tmp_path, fx, "lora", "steps=4", "lora_r=8", f"adapter_out={tmp_path / 'adapter'}")
+    env = {
+        **os.environ,
+        "DLT_RESULTS": str(tmp_path / "res"),
+        "DLT_HOME": str(tmp_path),
+        "PYTHONPATH": str(ROOT / "src"),
+        "OMP_NUM_THREADS": "1",
+    }
+
+    def evaluate(*args):
+        cmd = [
+            sys.executable,
+            "-m",
+            "dlt.bird.evaluate",
+            "--data",
+            str(fx["data"]),
+            "--split",
+            "val",
+            "--workers",
+            "1",
+            *args,
+        ]
+        out = subprocess.run(cmd, cwd=ROOT, env=env, capture_output=True, text=True, timeout=600)
+        assert out.returncode == 0, out.stdout[-2000:] + out.stderr[-2000:]
+        recs = [json.loads(p.read_text()) for p in (tmp_path / "res" / "eval").glob("*.json")]
+        return max(recs, key=lambda r: r["created_at"])["summary"]
+
+    oracle = evaluate("--mode", "oracle", "--name", "oracle")
+    assert oracle["ex"] == 1.0 and oracle["questions"] == 8 and oracle["gold_errors"] == 0
+    tuned = evaluate(
+        "--mode",
+        "finetuned",
+        "--model",
+        str(fx["model"]),
+        "--quant",
+        "bf16",
+        "--adapter",
+        str(tmp_path / "adapter"),
+        "--max-new",
+        "12",
+        "--batch",
+        "4",
+        "--name",
+        "tuned",
+    )
+    assert tuned["questions"] == 8 and tuned["adapter"] == "adapter" and 0.0 <= tuned["ex"] <= 1.0
+    lines = (tmp_path / "eval" / "tuned.jsonl").read_text().splitlines()
+    assert len(lines) == 8 and {"pred", "correct", "pred_error"} <= set(json.loads(lines[0]))

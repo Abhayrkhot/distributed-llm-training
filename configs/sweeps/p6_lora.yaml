@@ -1,0 +1,34 @@
+# Phase 6 short sweeps on one H200 at a fixed budget (40 steps x 16 examples = 640 BIRD train
+# questions per run, the same 640 in every run), selected on validation loss over 128 held-out-database
+# questions, with throughput and memory alongside. One change per row against p6.r16.
+#   sbatch slurm/sweep_1gpu.sbatch configs/sweeps/p6_lora.yaml
+name: p6
+repeats: 1
+run_timeout_s: 5400
+base:
+  model: ${DLT_HOME}/models/qwen2.5-72b-nf4
+  quant: nf4
+  peft: lora
+  lora_r: 16
+  lora_alpha: 32
+  task: sft
+  data: ${DLT_HOME}/data/bird/train.jsonl
+  val_data: ${DLT_HOME}/data/bird/val.jsonl
+  schemas: ${DLT_HOME}/data/bird/schemas.json
+  eval_samples: 128
+  seq_len: 4096
+  global_batch: 16
+  micro_batch: 1
+  backend: single
+  activation_checkpointing: true
+  steps: 40
+  lr: 1.0e-4
+  warmup_steps: 5
+  weight_decay: 0.0
+  timing_warmup: 3
+runs:
+  - {name: r16, gpus: 1}
+  - {name: r64, gpus: 1, set: {lora_r: 64, lora_alpha: 128}}
+  - {name: r16-no-ac, gpus: 1, set: {activation_checkpointing: false}}
+  - {name: r16-len2048, gpus: 1, set: {seq_len: 2048}}
+  - {name: r16-sdpa-efficient, gpus: 1, set: {sdpa_backend: efficient}}
