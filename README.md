@@ -213,6 +213,28 @@ _No Phase 4 runs yet._
 _No Nsight Systems profiles yet._
 <!-- /gen:profile -->
 
+## Qwen2.5-72B in NF4 (Phase 5)
+
+<!-- gen:nf4 -->
+_No 72B NF4 runs yet._
+<!-- /gen:nf4 -->
+
+## 72B QLoRA on BIRD text-to-SQL (Phases 6-7)
+
+<!-- gen:bird -->
+_No BIRD evaluations yet._
+<!-- /gen:bird -->
+
+<!-- gen:qlora -->
+_No 72B QLoRA training runs yet._
+<!-- /gen:qlora -->
+
+## Fault tolerance (Phase 8)
+
+<!-- gen:faults -->
+_No fault-injection runs yet._
+<!-- /gen:faults -->
+
 ## Layout
 
 | Path | What |

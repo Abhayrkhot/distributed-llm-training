@@ -532,6 +532,218 @@ def profile_section() -> str:
     return "\n".join(lines)
 
 
+def _by_name(kind: str, key: str = "name") -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    for r in load_records(ROOT / "results", kind):
+        n = r["summary"].get(key)
+        if n:
+            out[n] = r
+    return out
+
+
+def nf4_section() -> str:
+    bench, ev = _by_name("bench"), _by_name("eval")
+    q = bench.get("nf4-quantize")
+    if not q:
+        return "_No 72B NF4 runs yet._"
+    s = q["summary"]
+    tk = s["tokenizer"]
+    lines = [
+        f"Qwen2.5-72B at `{s['revision'][:10]}`. Tokenizer: special-token ids "
+        f"{'correct' if tk['special_ok'] else 'WRONG'}, {tk['roundtrip_failures']} round-trip failures over "
+        f"{tk['roundtrip_texts']} example texts, vocabulary "
+        f"{'identical to' if tk['vocab_matches_0p5b'] else 'DIFFERENT from'}"
+        " Qwen2.5-0.5B's.",
+        "",
+        "| Load path | GPUs | Load (s) | Peak GPU memory (GiB) | Host RSS (GiB) |",
+        "|---|---|---|---|---|",
+        f"| BF16 checkpoint, quantized to NF4 while loading | 1 | {s['quantize_on_load_s']:.0f} | "
+        f"{s['peak_gpu_gib_quantize'][0]:.1f} | {s['host_rss_gib']:.1f} |",
+        f"| saved NF4 checkpoint ({s['saved_gib']:.1f} GiB on disk) | 1 | {s['reload_saved_s']:.0f} | "
+        f"{s['peak_gpu_gib_reload'][0]:.1f} | - |",
+    ]
+    for name, label in (
+        ("logits-bf16", "BF16, layers split over 2 GPUs"),
+        ("logits-nf4-saved", "NF4 forward pass"),
+    ):
+        r = bench.get(name)
+        if r:
+            b = r["summary"]
+            peaks = ", ".join(f"{x:.1f}" for x in b["peak_gpu_gib"])
+            lines.append(f"| {label} | {b['gpus']} | {b['load_s']:.0f} | {peaks} | {b['host_rss_gib']:.1f} |")
+    c = ev.get("nf4-vs-bf16")
+    if c:
+        cs = c["summary"]
+        lines += [
+            "",
+            f"NF4 vs BF16, teacher-forced over {cs['examples']} validation questions ({cs['positions']:,} "
+            f"positions, {cs['sql_positions']:,} in the SQL): the argmax next token agrees at "
+            f"{100 * cs['argmax_agreement_all']:.2f}% of positions ({100 * cs['argmax_agreement_sql']:.2f}% "
+            f"in the SQL); perplexity of the gold SQL {cs['ppl_sql']['a']:.4f} (NF4) vs "
+            f"{cs['ppl_sql']['b']:.4f} (BF16), a {100 * cs['ppl_sql_gap']:+.2f}% gap "
+            f"({100 * cs['ppl_all_gap']:+.2f}% over all tokens).",
+        ]
+    return "\n".join(lines)
+
+
+def _correct_by_qid(r: dict) -> dict[int, int]:
+    m = r["metrics"]
+    return dict(zip(m["question_id"], m["correct"], strict=True))
+
+
+def bird_section() -> str:
+    evs = [
+        r
+        for r in load_records(ROOT / "results", "eval")
+        if r["summary"].get("mode") in ("base", "finetuned", "instruct")
+    ]
+    if not evs:
+        return "_No BIRD evaluations yet._"
+    import sys as _sys
+
+    _sys.path.insert(0, str(ROOT / "src"))
+    from dlt.bird.execute import paired_bootstrap_gain
+
+    latest = {}
+    for r in evs:
+        latest[(r["summary"]["mode"], r["summary"]["split"], r["summary"]["name"])] = r
+    lines = [
+        "Execution accuracy (EX): the predicted SQL returns the same set of rows as the gold SQL on the "
+        "database (BIRD's official criterion), 95% bootstrap CI over questions. Same schema text, greedy "
+        "decoding and scorer for every model; the base model gets 3 worked examples from other databases, "
+        "the fine-tuned model none; the Instruct model (NF4, chat template) is a reference, not a baseline. "
+        '"val" is the database-level holdout from BIRD train; "dev" is BIRD dev (1106 split).',
+        "",
+        "| Run | Model | Split | Questions | EX | 95% CI | Simple / moderate / challenging |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for (mode, split, name), r in sorted(latest.items(), key=lambda kv: (kv[0][1], kv[0][0], kv[0][2])):
+        s = r["summary"]
+        diff = s.get("by_difficulty", {})
+        d = (
+            " / ".join(
+                f"{100 * diff[k]['ex']:.1f}" for k in ("simple", "moderate", "challenging") if k in diff
+            )
+            or "-"
+        )
+        lines.append(
+            f"| {name} | {mode} | {split} | {s['questions']} | {100 * s['ex']:.1f}% | "
+            f"{100 * s['ex_ci95'][0]:.1f}-{100 * s['ex_ci95'][1]:.1f} | {d} |"
+        )
+    for split in ("val", "dev"):
+        base = [r for (m, sp, _), r in latest.items() if m == "base" and sp == split]
+        tuned = [r for (m, sp, _), r in latest.items() if m == "finetuned" and sp == split]
+        if base and tuned:
+            a, b = _correct_by_qid(base[-1]), _correct_by_qid(tuned[-1])
+            q = sorted(set(a) & set(b))
+            gain, lo, hi = paired_bootstrap_gain([bool(a[i]) for i in q], [bool(b[i]) for i in q])
+            lines.append(
+                f"\nFine-tuned minus base on {split} ({len(q)} questions, paired bootstrap): "
+                f"{100 * gain:+.1f} points, 95% CI {100 * lo:+.1f} to {100 * hi:+.1f}."
+            )
+    return "\n".join(lines)
+
+
+def qlora_section() -> str:
+    recs = [r for r in load_records(ROOT / "results", "train") if r["summary"].get("peft")]
+    if not recs:
+        return "_No 72B QLoRA training runs yet._"
+    lines = [
+        "72B QLoRA training runs (one record per Slurm job). Tokens are real tokens (prompt + SQL, no "
+        "padding); MFU uses the QLoRA convention 4N + 12LdT (PLAN.md 4.3).",
+        "",
+        "| Run | Backend x GPUs | r | Steps | Stopped by | Loss first -> last | Val loss | Tokens/s | MFU | "
+        "Peak GPU (GiB) | Audit |",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
+    ]
+    for r in recs:
+        s, c = r["summary"], r["config"]
+        a = s.get("adapter_audit") or {}
+        audit = (
+            f"{a.get('trainable_params', 0) / 1e6:.1f}M LoRA params, base unchanged"
+            if a.get("frozen_unchanged_after_step")
+            else "-"
+        )
+        vl = s.get("val_loss_end")
+        lines.append(
+            f"| {s['run_name']} | {s['backend']} x {s['world_size']} | {c['lora_r']} | "
+            f"{s['start_step']}-{s['end_step']} | "
+            f"{s['stopped_by'] or 'finished'} | {s['loss_first']:.3f} -> {s['loss_last']:.3f} | "
+            f"{f'{vl:.4f}' if vl is not None else '-'} | {s['tokens_per_s']:,.0f} | "
+            f"{100 * s['mfu']:.1f}% | {', '.join(f'{x:.1f}' for x in s['peak_alloc_gib_by_rank'])} | "
+            f"{audit} |"
+        )
+    return "\n".join(lines)
+
+
+def faults_section() -> str:
+    recs = _latest_by_name()
+    ref = recs.get("p8-reference")
+    if not ref:
+        return "_No fault-injection runs yet._"
+    full = ref["metrics"]["loss"]
+    scen = [
+        ("kill-step", "SIGKILL mid-step (before step 25)", "p8-kill-step", "p8-kill-step-resume"),
+        (
+            "kill-save",
+            "SIGKILL after writing, before publishing the step-30 checkpoint",
+            "p8-kill-save",
+            "p8-kill-save-resume",
+        ),
+        ("kill-eval", "SIGKILL during the end-of-run evaluation", "p8-kill-eval", "p8-kill-eval-resume"),
+        ("term-graceful", "SIGTERM with stop_on_term", "p8-term-graceful", "p8-term-graceful-resume"),
+        ("term-default", "SIGTERM, default action", "p8-term-default", "p8-term-default-resume"),
+    ]
+    lines = [
+        'Qwen2.5-1.5B, FSDP2 on 2 H200s, deterministic mode, checkpoints every 10 steps. "Matches" means '
+        "every per-step loss after the resume equals the uninterrupted run's. Lost work is steps recomputed.",
+        "",
+        "| Failure | Resumed from | Lost steps | Restore (s) | Matches uninterrupted |",
+        "|---|---|---|---|---|",
+    ]
+    for _, label, _killed, resumed in scen:
+        r = recs.get(resumed)
+        if not r:
+            lines.append(
+                f"| {label} | run already complete; next link exits | 0 | - | - |"
+                if "eval" in label
+                else f"| {label} | - | - | - | - |"
+            )
+            continue
+        s = r["summary"]
+        k = s["start_step"]
+        pre = recs.get(_killed)
+        reached = pre["summary"]["end_step"] if pre else None
+        lost = "-"
+        if s["resumed_from"] is not None:
+            lost = str(max(0, (reached or k) - k)) if reached is not None else "see log"
+        ok = r["metrics"]["loss"] == full[k : k + len(r["metrics"]["loss"])]
+        lines.append(f"| {label} | step {k} | {lost} | {s['restore_s'] or 0:.1f} | {'yes' if ok else 'NO'} |")
+    sync, asy = recs.get("p8-sync"), recs.get("p8-async")
+    if sync and asy:
+
+        def stats(r):
+            cs = r["summary"]["checkpoints"]
+            return (
+                _med([c["blocking_s"] if "blocking_s" in c else c["total_s"] for c in cs]),
+                _med([c["total_s"] for c in cs]),
+                cs[0]["bytes"] / 2**30,
+                r["summary"]["step_time_s_median"],
+            )
+
+        b0, t0, g0, st0 = stats(sync)
+        b1, t1, g1, st1 = stats(asy)
+        lines += [
+            "",
+            "| Checkpoint | Size (GiB) | Training blocked per save (s) | Save complete (s) | "
+            "Median step (s) |",
+            "|---|---|---|---|---|",
+            f"| synchronous DCP | {g0:.1f} | {b0:.1f} | {t0:.1f} | {st0:.3f} |",
+            f"| DCP async_save | {g1:.1f} | {b1:.1f} | {t1:.1f} | {st1:.3f} |",
+        ]
+    return "\n".join(lines)
+
+
 SECTIONS = {
     "hardware": hardware_section,
     "nccl": nccl_section,
@@ -544,6 +756,10 @@ SECTIONS = {
     "ac": ac_section,
     "tuning": tuning_section,
     "profile": profile_section,
+    "nf4": nf4_section,
+    "bird": bird_section,
+    "qlora": qlora_section,
+    "faults": faults_section,
 }
 
 

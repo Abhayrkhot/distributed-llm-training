@@ -1,0 +1,16 @@
+# Phase 8 fault injection on the small model: pretrained Qwen2.5-1.5B, FSDP2 on 2 H200s, deterministic
+# mode with eager attention so every recovered run can be compared bit for bit with an uninterrupted one.
+# data is passed by slurm/phase8_faults.sbatch.
+model: Qwen/Qwen2.5-1.5B
+init: pretrained
+backend: fsdp2
+attn: eager
+deterministic: true
+seq_len: 1024
+global_batch: 16
+micro_batch: 4
+steps: 40
+lr: 1.0e-5
+warmup_steps: 5
+seed: 0
+timing_warmup: 3
