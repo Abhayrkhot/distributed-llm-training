@@ -387,10 +387,9 @@ def train(cfg: TrainConfig, ctx: dlt_dist.DistCtx, root: Path | None, state: dic
             raise torch.OutOfMemoryError(f"simulated out of memory at step {step} (oom_at_step)")
         if step == prof_first:
             prof_dir = Path(tempfile.mkdtemp(prefix="dlt-prof-"))
-            prof = torch.profiler.profile(
-                activities=[torch.profiler.ProfilerActivity.CPU]
-                + ([torch.profiler.ProfilerActivity.CUDA] if cuda else [])
-            )
+            # GPU kernels only: CPU op events would make traces of 16-32 micro-batch steps huge
+            activity = torch.profiler.ProfilerActivity.CUDA if cuda else torch.profiler.ProfilerActivity.CPU
+            prof = torch.profiler.profile(activities=[activity])
             prof.start()
 
         t0 = clock.now()

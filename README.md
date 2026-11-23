@@ -95,7 +95,7 @@ Qwen2.5 0.5B-14B, full-parameter training on 1 and 2 H200s
 ([configs/sweeps/p3_ladder.yaml](configs/sweeps/p3_ladder.yaml), run by
 [src/dlt/sweep.py](src/dlt/sweep.py)). Pretrained weights, FineWeb-Edu, 2,048-token packed sequences,
 global batch 32 sequences (65,536 tokens) per step, FP32 master weights with BF16 compute, AdamW.
-Steps 1-5 (warmup) and 16-18 (profiler) are excluded from timing; tokens are counted after packing, no
+Steps 1-5 (warmup) and, on 2 GPUs, 16-17 (profiler) are excluded from timing; tokens are counted after packing, no
 padding. MFU counts 6N + 12LdT FLOPs per token against the 989 TFLOPS dense BF16 peak; HFU adds the
 recomputed forward when checkpointing is on (PLAN.md 4.3).
 

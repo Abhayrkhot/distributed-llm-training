@@ -5,7 +5,8 @@
 # sequences (65,536 tokens) per optimizer step, FP32 master weights with BF16 compute, AdamW.
 # Micro-batch is fixed per model (the largest that fits the single-GPU or DDP baseline); accumulation
 # fills the global batch, so it is 2x larger on 1 GPU than on 2.
-# 25 steps: the first 5 are warmup, steps 15-17 run under the profiler; both are excluded from timing.
+# 25 steps: the first 5 are warmup and 2-GPU runs profile steps 16-17 (GPU kernels only, for exposed
+# communication); both are excluded from timing. 1-GPU runs have no communication and are not profiled.
 # Exceptions, stated in the tables: 7B single-GPU needs activation checkpointing; 14B runs only on
 # 2 GPUs with FSDP2, checkpointing and per-micro-batch gradient sync (anything else is predicted OOM).
 # Entries marked "probe" run once to check the memory predictor near the 139.8 GiB limit.
@@ -21,29 +22,29 @@ base:
   warmup_steps: 5
   lr: 1.0e-5
   timing_warmup: 5
-  profile_steps: 3
+  profile_steps: 2
   profile_start: 15
 runs:
   # 0.5B, micro-batch 4
-  - {name: 0p5b-single, gpus: 1, set: {model: Qwen/Qwen2.5-0.5B, backend: single, micro_batch: 4}}
+  - {name: 0p5b-single, gpus: 1, set: {profile_steps: 0, model: Qwen/Qwen2.5-0.5B, backend: single, micro_batch: 4}}
   - {name: 0p5b-ddp, gpus: 2, set: {model: Qwen/Qwen2.5-0.5B, backend: ddp, micro_batch: 4}}
   - {name: 0p5b-fsdp2, gpus: 2, set: {model: Qwen/Qwen2.5-0.5B, backend: fsdp2, micro_batch: 4}}
   # 1.5B, micro-batch 4
-  - {name: 1p5b-single, gpus: 1, set: {model: Qwen/Qwen2.5-1.5B, backend: single, micro_batch: 4}}
-  - {name: 1p5b-single-ac, gpus: 1, set: {model: Qwen/Qwen2.5-1.5B, backend: single, micro_batch: 4, activation_checkpointing: true}}
+  - {name: 1p5b-single, gpus: 1, set: {profile_steps: 0, model: Qwen/Qwen2.5-1.5B, backend: single, micro_batch: 4}}
+  - {name: 1p5b-single-ac, gpus: 1, set: {profile_steps: 0, model: Qwen/Qwen2.5-1.5B, backend: single, micro_batch: 4, activation_checkpointing: true}}
   - {name: 1p5b-ddp, gpus: 2, set: {model: Qwen/Qwen2.5-1.5B, backend: ddp, micro_batch: 4}}
   - {name: 1p5b-fsdp2, gpus: 2, set: {model: Qwen/Qwen2.5-1.5B, backend: fsdp2, micro_batch: 4}}
   - {name: 1p5b-fsdp2-ac, gpus: 2, set: {model: Qwen/Qwen2.5-1.5B, backend: fsdp2, micro_batch: 4, activation_checkpointing: true}}
   # 3B, micro-batch 2
-  - {name: 3b-single, gpus: 1, set: {model: Qwen/Qwen2.5-3B, backend: single, micro_batch: 2}}
-  - {name: 3b-single-ac, gpus: 1, set: {model: Qwen/Qwen2.5-3B, backend: single, micro_batch: 2, activation_checkpointing: true}}
+  - {name: 3b-single, gpus: 1, set: {profile_steps: 0, model: Qwen/Qwen2.5-3B, backend: single, micro_batch: 2}}
+  - {name: 3b-single-ac, gpus: 1, set: {profile_steps: 0, model: Qwen/Qwen2.5-3B, backend: single, micro_batch: 2, activation_checkpointing: true}}
   - {name: 3b-ddp, gpus: 2, set: {model: Qwen/Qwen2.5-3B, backend: ddp, micro_batch: 2}}
   - {name: 3b-fsdp2, gpus: 2, set: {model: Qwen/Qwen2.5-3B, backend: fsdp2, micro_batch: 2}}
   - {name: 3b-fsdp2-ac, gpus: 2, set: {model: Qwen/Qwen2.5-3B, backend: fsdp2, micro_batch: 2, activation_checkpointing: true}}
   # 7B, micro-batch 1
-  - {name: 7b-single-ac, gpus: 1, set: {model: Qwen/Qwen2.5-7B, backend: single, micro_batch: 1, activation_checkpointing: true}}
+  - {name: 7b-single-ac, gpus: 1, set: {profile_steps: 0, model: Qwen/Qwen2.5-7B, backend: single, micro_batch: 1, activation_checkpointing: true}}
   # probe paired with the third 7B single-GPU repeat
-  - {name: probe-7b-single, gpus: 1, repeats: 1, set: {model: Qwen/Qwen2.5-7B, backend: single, micro_batch: 1}}
+  - {name: probe-7b-single, gpus: 1, repeats: 1, set: {profile_steps: 0, model: Qwen/Qwen2.5-7B, backend: single, micro_batch: 1}}
   - {name: 7b-fsdp2-ac, gpus: 2, set: {model: Qwen/Qwen2.5-7B, backend: fsdp2, micro_batch: 1, activation_checkpointing: true}}
   - {name: 7b-fsdp2, gpus: 2, set: {model: Qwen/Qwen2.5-7B, backend: fsdp2, micro_batch: 1}}
   - {name: 7b-fsdp2-ac-every, gpus: 2, set: {model: Qwen/Qwen2.5-7B, backend: fsdp2, micro_batch: 1, activation_checkpointing: true, accum_sync: every}}

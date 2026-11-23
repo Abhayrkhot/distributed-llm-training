@@ -263,7 +263,7 @@ def ladder_section() -> str:
     lines = [
         "Median over repeats, (min-max) where there are several. Step split and exposed communication are "
         "per optimizer step; exposed communication is NCCL kernel time with no compute kernel running, "
-        "from a 3-step profiler window (max over ranks).",
+        "from a 2-step profiler window (max over ranks).",
         "",
         "| Run | Model | GPUs | Backend | AC | Micro x accum | Repeats | Tokens/s | MFU | HFU | "
         "Fwd / bwd / opt (s) | Exposed comm (s) | Peak alloc (GiB) | Host RSS (GiB) | Load (s) |",
