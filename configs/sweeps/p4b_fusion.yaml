@@ -1,0 +1,26 @@
+# Phase 4, second round: the two candidates the Nsight profiles of the baselines pointed to
+# (docs/phase4.md): holding FSDP2 parameters across micro-batches (the 7B baseline all-gathers every
+# layer 32 times per step) and torch.compile on the decoder layers (unfused elementwise kernels are
+# 22-31% of kernel time). Baselines rerun in the same sweep, as in p4_tuning.yaml.
+#   sbatch slurm/sweep_2gpu.sbatch configs/sweeps/p4b_fusion.yaml
+name: p4b
+repeats: 3
+run_timeout_s: 1500
+base:
+  init: pretrained
+  data: ${DLT_HOME}/data/fineweb-edu-000/train.bin
+  seq_len: 2048
+  global_batch: 32
+  steps: 25
+  warmup_steps: 5
+  lr: 1.0e-5
+  timing_warmup: 5
+  profile_steps: 2
+  profile_start: 15
+runs:
+  - {name: 7b-base, gpus: 2, set: {model: Qwen/Qwen2.5-7B, backend: fsdp2, micro_batch: 1}}
+  - {name: 7b-hold, gpus: 2, set: {model: Qwen/Qwen2.5-7B, backend: fsdp2, micro_batch: 1, fsdp_hold_params: true}}
+  - {name: 7b-compile, gpus: 2, set: {model: Qwen/Qwen2.5-7B, backend: fsdp2, micro_batch: 1, compile: true}}
+  - {name: 7b-compile-hold, gpus: 2, set: {model: Qwen/Qwen2.5-7B, backend: fsdp2, micro_batch: 1, compile: true, fsdp_hold_params: true}}
+  - {name: 1p5b-base, gpus: 2, set: {model: Qwen/Qwen2.5-1.5B, backend: ddp, micro_batch: 4}}
+  - {name: 1p5b-compile, gpus: 2, set: {model: Qwen/Qwen2.5-1.5B, backend: ddp, micro_batch: 4, compile: true}}

@@ -210,12 +210,7 @@ _No Phase 4 runs yet._
 <!-- /gen:tuning -->
 
 <!-- gen:profile -->
-Nsight Systems, rank 0, GPU kernel time per optimizer step by category (share of kernel time), over the captured steps ([scripts/nsys_summary.py](scripts/nsys_summary.py)). NCCL kernel time includes time spent waiting for the other rank.
-
-| Run | GEMM | attention | NCCL | elementwise + reduce | cross-entropy | optimizer + clip | FSDP2 copies | other | Exposed comm (s) | GPU idle (s) |
-|---|---|---|---|---|---|---|---|---|---|---|
-| p4-nsys-7b-base | 2.128 (35%) | 0.276 (4%) | 1.524 (25%) | 0.000 (0%) | 0.040 (1%) | 0.558 (9%) | 0.000 (0%) | 1.614 (26%) | 0.297 | 0.156 |
-| p4-nsys-1p5b-base | 0.410 (34%) | 0.094 (8%) | 0.254 (21%) | 0.000 (0%) | 0.039 (3%) | 0.018 (1%) | 0.000 (0%) | 0.409 (33%) | 0.119 | 0.043 |
+_No Nsight Systems profiles yet._
 <!-- /gen:profile -->
 
 ## Layout

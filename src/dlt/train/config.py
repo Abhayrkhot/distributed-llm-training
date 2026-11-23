@@ -38,6 +38,9 @@ class TrainConfig:
     ddp_bucket_view: bool = False  # DDP gradient_as_bucket_view (gradients live in the buckets)
     reshard_after_forward: bool = True  # FSDP2: free each layer's gathered parameters after forward
     fsdp_prefetch: int = 0  # FSDP2: explicitly prefetch this many layers ahead (0: FSDP2's default)
+    fsdp_hold_params: bool = False  # FSDP2: keep layers unsharded across the micro-batches of a step
+    compile: bool = False  # torch.compile each decoder layer (fuses the elementwise ops)
+    compile_backend: str = "inductor"  # aot_eager in CPU tests (no C++ toolchain needed)
     # data
     data: str = ""  # train.bin (flat uint32 tokens)
     seq_len: int = 2048

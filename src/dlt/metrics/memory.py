@@ -64,8 +64,11 @@ def predict(
     ddp_bucket_view: bool = False,
     reshard_after_forward: bool = True,
     fsdp_prefetch: int = 0,
+    fsdp_hold_params: bool = False,
 ) -> dict[str, float]:
-    """Predicted peak bytes per rank, by term, plus ``total``."""
+    """Predicted peak bytes per rank, by term, plus ``total``. torch.compile is not modeled: its
+    partitioner may recompute cheap ops in backward and save less, so compiled runs can come in under."""
+    reshard_after_forward = reshard_after_forward and not fsdp_hold_params
     if backend not in ("single", "ddp", "fsdp2"):
         raise ValueError(backend)
     p = s.total_params()
@@ -158,4 +161,5 @@ def predict_for_config(s: ModelShape, cfg, world: int, accum: int) -> dict[str, 
         ddp_bucket_view=getattr(cfg, "ddp_bucket_view", False),
         reshard_after_forward=getattr(cfg, "reshard_after_forward", True),
         fsdp_prefetch=getattr(cfg, "fsdp_prefetch", 0),
+        fsdp_hold_params=getattr(cfg, "fsdp_hold_params", False),
     )

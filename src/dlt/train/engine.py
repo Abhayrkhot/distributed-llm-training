@@ -114,6 +114,11 @@ def build_model(cfg: TrainConfig):
         checkpoint_layers(model, cfg.ac_every)
     if cfg.loss_chunk:
         ChunkedLossHead.install(model.lm_head, cfg.loss_chunk)
+    if cfg.compile:
+        # one compiled graph serves every layer (parameters are graph inputs, so the identical layers
+        # share it); applied before DDP/FSDP2 wrapping, whose hooks stay outside the compiled region
+        for layer in model.model.layers:
+            layer.compile(backend=cfg.compile_backend)
     return model
 
 
@@ -225,8 +230,9 @@ def wrap(model, cfg: TrainConfig, ctx: dlt_dist.DistCtx):
     mesh = init_device_mesh(ctx.device.type, (ctx.world_size,))
     mp = MixedPrecisionPolicy(param_dtype=torch.bfloat16, reduce_dtype=torch.float32)
     layers = list(model.model.layers)
+    reshard = cfg.reshard_after_forward and not cfg.fsdp_hold_params
     for layer in layers:
-        fully_shard(layer, mesh=mesh, mp_policy=mp, reshard_after_forward=cfg.reshard_after_forward)
+        fully_shard(layer, mesh=mesh, mp_policy=mp, reshard_after_forward=reshard)
     fully_shard(model, mesh=mesh, mp_policy=mp)
     if (
         cfg.fsdp_prefetch > 0
@@ -256,6 +262,10 @@ def make_optimizer(model, cfg: TrainConfig, cuda: bool):
 
 
 def _no_grad_sync(model, cfg: TrainConfig, ctx: dlt_dist.DistCtx, last: bool):
+    if cfg.backend == "fsdp2" and cfg.fsdp_hold_params:
+        # with reshard_after_forward off, this keeps every layer gathered from the first micro-batch's
+        # forward to the last one's backward: one all-gather per layer per step instead of 2 per micro-batch
+        model.set_reshard_after_backward(last)
     if not ctx.distributed or last or cfg.accum_sync == "every":
         if cfg.backend == "fsdp2":
             model.set_requires_gradient_sync(True)

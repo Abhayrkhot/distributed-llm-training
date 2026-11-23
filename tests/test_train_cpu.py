@@ -271,11 +271,27 @@ def test_chunked_loss_matches_full_logits(tmp_path, tokens, nproc, backend):
         ("ddp", ["ddp_bucket_mb=0.001"]),
         ("fsdp2", ["reshard_after_forward=false"]),
         ("fsdp2", ["fsdp_prefetch=2"]),
+        ("fsdp2", ["fsdp_hold_params=true"]),
     ],
-    ids=["bucket-view", "tiny-buckets", "no-reshard", "prefetch-2"],
+    ids=["bucket-view", "tiny-buckets", "no-reshard", "prefetch-2", "hold-params"],
 )
 def test_distributed_knobs_do_not_change_the_math(tmp_path, tokens, backend, knobs):
     base = run(tmp_path, tokens, "base", f"backend={backend}", nproc=2)
     knob = run(tmp_path, tokens, "knob", f"backend={backend}", *knobs, nproc=2)
     assert knob["metrics"]["loss"] == base["metrics"]["loss"]
     assert knob["metrics"]["grad_norm"] == base["metrics"]["grad_norm"]
+
+
+@pytest.mark.parametrize("nproc,backend", [(1, "single"), (2, "ddp"), (2, "fsdp2")])
+def test_compiled_layers_match_eager(tmp_path, tokens, nproc, backend):
+    eager = run(tmp_path, tokens, "eager", f"backend={backend}", nproc=nproc)
+    compiled = run(
+        tmp_path,
+        tokens,
+        "compiled",
+        f"backend={backend}",
+        "compile=true",
+        "compile_backend=aot_eager",
+        nproc=nproc,
+    )
+    np.testing.assert_allclose(compiled["metrics"]["loss"], eager["metrics"]["loss"], rtol=1e-5)
