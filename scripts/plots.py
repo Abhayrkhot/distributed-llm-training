@@ -155,6 +155,72 @@ def bird_plot() -> None:
     save(fig, "p6_bird.png")
 
 
+def checkpoint_plot() -> None:
+    """Training time blocked per checkpoint save vs the time the save takes to complete."""
+    recs = g._latest_by_name()
+    rows = []
+    for name, label in (
+        ("p8-sync", "1.5B FSDP2, sync (18.1 GiB)"),
+        ("p8-async", "1.5B FSDP2, async (18.1 GiB)"),
+    ):
+        r = recs.get(name)
+        if r:
+            cs = r["summary"]["checkpoints"]
+            rows.append(
+                (
+                    label,
+                    g._med([c.get("blocking_s", c["total_s"]) for c in cs]),
+                    g._med([c["total_s"] for c in cs]),
+                )
+            )
+    for name, label in (
+        ("p8-72b-final", "72B adapter r=16, sync (3.4 GiB)"),
+        ("p6-main", "72B adapter r=64, sync (10.5 GiB)"),
+    ):
+        r = recs.get(name)
+        if r and r["summary"]["checkpoints"]:
+            cs = r["summary"]["checkpoints"]
+            rows.append(
+                (
+                    label,
+                    g._med([c.get("blocking_s", c["total_s"]) for c in cs]),
+                    g._med([c["total_s"] for c in cs]),
+                )
+            )
+    if not rows:
+        return
+    fig, ax = plt.subplots(figsize=(7.5, 0.55 * len(rows) + 1.3))
+    for i, (_label, blocked, total) in enumerate(rows[::-1]):
+        ax.barh(
+            i,
+            total,
+            color=GRID,
+            height=0.62,
+            edgecolor=SURFACE,
+            linewidth=2,
+            label="save complete" if i == 0 else None,
+        )
+        ax.barh(
+            i,
+            blocked,
+            color=BACKEND["ddp"],
+            height=0.62,
+            edgecolor=SURFACE,
+            linewidth=2,
+            label="training blocked" if i == 0 else None,
+        )
+        ax.text(
+            total + 0.8, i, f"blocked {blocked:.1f} s of {total:.1f} s", va="center", color=MUTED, fontsize=8
+        )
+    ax.set_yticks(range(len(rows)), [r[0] for r in rows[::-1]])
+    ax.set_xlim(0, max(r[2] for r in rows) * 1.45)
+    ax.grid(axis="y", visible=False)
+    ax.set_xlabel("seconds per checkpoint (median)")
+    ax.set_title("Checkpoint cost on /scratch (VAST NFS)")
+    ax.legend(loc="lower right")
+    save(fig, "p8_checkpoint.png")
+
+
 MODES = {
     "base": ("base, 3-shot", "#2a78d6"),
     "finetuned": ("base + QLoRA adapter", "#eb6834"),
@@ -268,6 +334,7 @@ if __name__ == "__main__":
     chain_plot()
     chain_plot("p6-main", "72B QLoRA on BIRD train across chained Slurm jobs (1 H200)", "p6_main.png", w=10)
     bird_plot()
+    checkpoint_plot()
     mfu_plot()
     memory_plot()
     split_plot()

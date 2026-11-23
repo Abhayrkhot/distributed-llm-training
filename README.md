@@ -4,10 +4,12 @@ Distributed LLM training on Northeastern Explorer H200s: a tested DDP/FSDP2 trai
 full-parameter scaling and memory study on the Qwen2.5 size ladder, and a Qwen2.5-72B QLoRA fine-tune
 evaluated against its base model.
 
-Status: Phases 0-2 done; Phase 3 (scaling and memory study) measured, single-GPU checkpointing runs
-being redone after an engine fix; Phase 4 (profiling and tuning) running. See [PLAN.md](PLAN.md) for
-the phases, [docs/phase0.md](docs/phase0.md) for the hardware manifest and decisions, and
-[docs/phase2.md](docs/phase2.md) for the engine.
+Status: Phases 0-5 and 8 done; Phase 6 (the 72B fine-tune) training; Phase 7 (72B on 2 GPUs,
+replicated vs sharded) queued; Phase 9 (4-8 GPUs on rented hardware) later. Plan: [PLAN.md](PLAN.md).
+Write-ups: [0 hardware and decisions](docs/phase0.md), [1 environment](docs/phase1.md),
+[2 engine](docs/phase2.md), [3 scaling and memory](docs/phase3.md), [4 profiling and tuning](docs/phase4.md),
+[5 72B in NF4 and BIRD data](docs/phase5.md), [6 72B QLoRA](docs/phase6.md),
+[8 fault tolerance](docs/phase8.md), [results log](docs/RESULTS_LOG.md).
 
 ## Results at a glance
 
@@ -109,6 +111,8 @@ Qwen2.5-0.5B, fsdp2 on 2 GPUs, 4,500 steps x 32,768 tokens, validation loss on t
 | 12073206 | 2986-4500 | finished | step_00002986 (8) | 3000: 10, 4000: 8, 4500: 8 | 126,759 | - -> 2.6965 |
 <!-- /gen:chain -->
 
+![Loss across the two jobs](docs/img/p2_chain.png)
+
 ## Scaling and memory study (Phase 3)
 
 Qwen2.5 0.5B-14B, full-parameter training on 1 and 2 H200s
@@ -149,6 +153,10 @@ Median over repeats, (min-max) where there are several. Step split and exposed c
 | 3b-fsdp2-ac-1gpu | 3B | 1 | fsdp2 | on | 2 x 16 | 3 | 13,693 (13,268-13,700) | 28.1 (27.3-28.2)% | 37.5% | 1.30/3.45/0.04 | - | 55.4 | 5.0 | 9 |
 | 7b-fsdp2-ac-1gpu | 7B | 1 | fsdp2 | on | 1 x 32 | 3 | 6,059 (6,047-6,181) | 27.5 (27.5-28.1)% | 36.7% | 2.72/8.01/0.09 | - | 122.6 | 6.6 | 11 |
 <!-- /gen:ladder -->
+
+![MFU by configuration](docs/img/p3_mfu.png)
+
+![Step time split](docs/img/p3_step_split.png)
 
 ### Scaling from 1 to 2 GPUs
 
@@ -211,6 +219,8 @@ Over 72 finished runs: median absolute error 1.6%, worst 4.0% (at run time: medi
 
 Out of sample, on the 66 Phase 4 runs (configurations the corrections never saw: larger micro-batches, chunked loss, longer sequences, other kernels): median absolute error 1.6%, worst 7.1% (worst: 1p5b-bucket-view).
 <!-- /gen:memory -->
+
+![Predicted vs measured peak memory](docs/img/p3_memory.png)
 
 ### Activation checkpointing
 
@@ -324,6 +334,8 @@ Execution accuracy (EX): the predicted SQL returns the same set of rows as the g
 | instruct-val | instruct | val | 880 | 70.2% | 67.2-73.3 | - |
 <!-- /gen:bird -->
 
+![BIRD execution accuracy](docs/img/p6_bird.png)
+
 <!-- gen:qlora -->
 72B QLoRA training runs (one record per Slurm job). Tokens are real tokens (prompt + SQL, no padding); MFU uses the QLoRA convention 4N + 12LdT (PLAN.md 4.3).
 
@@ -357,27 +369,53 @@ Qwen2.5-1.5B, FSDP2 on 2 H200s, deterministic mode, checkpoints every 10 steps. 
 | DCP async_save | 18.1 | 1.9 | 40.6 | 0.378 |
 <!-- /gen:faults -->
 
+![Checkpoint cost](docs/img/p8_checkpoint.png)
+
 ## Layout
 
 | Path | What |
 |---|---|
-| `src/dlt/` | library: process groups, results records, FLOP counting, benchmarks |
-| `slurm/` | job templates (`h200_1gpu`, `h200_2gpu`), the Phase 1 check job, env setup, chained jobs |
-| `scripts/` | env setup, result import, README generation, probe parsing |
-| `results/` | one JSON record per run (the only source of README numbers) |
+| `src/dlt/train/` | the training engine: single GPU, DDP, FSDP2, FSDP1 for sharded QLoRA; LoRA on NF4; DCP checkpoints (sync and async); sharded loading |
+| `src/dlt/data/` | packed pretraining tokens, SFT examples, the deterministic data order |
+| `src/dlt/metrics/` | FLOPs and MFU, the peak-memory predictor, communication overlap from kernel timelines |
+| `src/dlt/bird/` | BIRD preparation, prompts, generation and execution-accuracy scoring |
+| `src/dlt/qlora/` | 72B NF4 quantization and the NF4-vs-BF16 check |
+| `src/dlt/sweep.py` | runs a sweep file inside one Slurm allocation, resumable |
+| `configs/` | training configs and sweep files, one per study |
+| `slurm/` | job scripts: 1- and 2-GPU templates, sweeps, chained runs, Nsight, fault injection, data and model preparation |
+| `scripts/` | README and figure generation, result import, Nsight summaries, probes |
+| `results/` | one JSON record per run, the only source of numbers in this README; `invalid.json` lists records a bug invalidated |
 | `manifests/` | hardware manifest and scrubbed raw probe output |
-| `docs/` | phase notes and decisions |
+| `docs/` | one write-up per phase and [docs/RESULTS_LOG.md](docs/RESULTS_LOG.md) (failures, dead ends, fixes) |
 
 ## Running on Explorer
 
 ```bash
-# once per lockfile: build the venv on a CPU node
+# once per lockfile: build the venv on a CPU node; fetch pinned weights (verified checksums); prepare data
 sbatch slurm/setup_env.sbatch
-# Phase 1 checks: NCCL sweep, 1- and 2-GPU smoke runs, wall-time stop test
+sbatch slurm/fetch_models.sbatch --verify Qwen/Qwen2.5-72B
+sbatch slurm/tokenize.sbatch
+sbatch slurm/bird_prep.sbatch
+# Phases 1-2: checks, engine correctness, a run across chained jobs
 sbatch slurm/phase1_smoke.sbatch
-# general form
-sbatch slurm/h200_2gpu.sbatch dlt.bench.smoke_train --model Qwen/Qwen2.5-0.5B
+sbatch slurm/phase2_correctness.sbatch
+slurm/chain.sh 2 slurm/phase2_chain.sbatch
+# Phases 3-4: sweeps run inside one allocation and skip finished runs
+sbatch slurm/sweep_2gpu.sbatch configs/sweeps/p3_ladder.yaml
+sbatch slurm/sweep_2gpu.sbatch configs/sweeps/p4c_combined.yaml
+sbatch slurm/nsys_2gpu.sbatch p4-nsys-7b-base --config configs/training/p4_7b_fsdp2.yaml
+# Phases 5-7: 72B NF4, QLoRA on BIRD, evaluation, replicated vs sharded
+sbatch slurm/phase5_nf4.sbatch
+sbatch slurm/h200_1gpu.sbatch dlt.train --config configs/training/p6_overfit.yaml
+slurm/chain.sh 2 slurm/phase6_main.sbatch
+sbatch slurm/h200_1gpu.sbatch dlt.bird.evaluate --mode finetuned --split dev --adapter /scratch/$USER/dlt/adapters/p6-main
+sbatch --mem=300G slurm/sweep_2gpu.sbatch configs/sweeps/p7_72b.yaml
+# Phase 8: fault injection
+sbatch slurm/phase8_faults.sbatch
+# stop a running job early without losing work (plain scancel can lose a checkpoint interval)
+scancel --batch --signal=USR1 <jobid>
 ```
 
 Submit from a checkout of one commit; jobs log the commit (`GIT_SHA`) and the `uv.lock` hash into
-every results record.
+every results record. Results are pulled off the cluster, scrubbed and imported with
+`scripts/import_results.py`; `python scripts/gen_readme.py` rebuilds every table and CI checks it.
