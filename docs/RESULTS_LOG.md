@@ -34,6 +34,7 @@ records invalidated by a bug are kept and listed in [results/invalid.json](../re
 | 5 | The first validation split drew 3 databases, one with a 5,000-token schema (dev's largest: 1,861) | prompt statistics in the manifest | val databases limited to schemas of at most 2,500 tokens, at least 6 |
 | 6 | Passing `quantization_config=None` overrode the saved NF4 checkpoint's own config and built an unquantized model | overfit test and LoRA sweep failed at load (jobs 12077474, 12077475) | the argument is omitted for pre-quantized checkpoints |
 | 8 | DCP `async_save` on the default process group deadlocked DDP: its background thread and training ran collectives on one group | the async-checkpoint CPU test hung under DDP | a dedicated gloo group for the background write |
+| 8 | A plain `scancel` lost a checkpoint interval despite the SIGTERM handler and a 600 s KillWait: Slurm signals torchrun too, and torchrun tears its workers down before an 18 GB save finishes | job 12085605 left `step_00000040.tmp`; the resume restarted at step 30 | stop jobs early with `scancel --batch --signal=USR1` (job 12085783: clean checkpoint, nothing lost) |
 
 ## Dead ends and open questions
 
