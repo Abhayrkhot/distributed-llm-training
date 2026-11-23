@@ -16,6 +16,8 @@ PINNED = {
     "Qwen/Qwen2.5-3B": "3aab1f1954e9cc14eb9509a215f9e5ca08227a9b",
     "Qwen/Qwen2.5-7B": "d149729398750b98c0af14eb82c78cfe92750796",
     "Qwen/Qwen2.5-14B": "97e1e76335b7017d8f67c08a19d103c0504298c9",
+    "Qwen/Qwen2.5-72B": "efba10c8e54e91e0d9570ab5f7b51a958474d4cb",
+    "Qwen/Qwen2.5-72B-Instruct": "495f39366efef23836d0cfae4fbe635880d2be31",  # eval reference only
 }
 BACKENDS = ("single", "ddp", "fsdp2")
 

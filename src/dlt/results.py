@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 SCHEMA_VERSION = 1
-KINDS = {"nccl_bw", "smoke_train", "bench", "train", "eval", "sweep", "profile"}
+KINDS = {"nccl_bw", "smoke_train", "bench", "train", "eval", "sweep", "profile", "model"}
 REQUIRED = {
     "schema_version": int,
     "kind": str,
