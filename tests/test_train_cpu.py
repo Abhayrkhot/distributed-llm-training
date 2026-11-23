@@ -160,3 +160,63 @@ def test_val_loss_across_world_sizes_resume_and_chain_end(tmp_path, tokens):
 
     # a further link of a chain finds the run complete and exits without loading a model or a record
     assert run(tmp_path, tokens, "third", *v, f"ckpt_dir={ck}") is None
+
+
+def save_tiny_checkpoint(path: Path, tied: bool) -> Path:
+    """A BF16 safetensors checkpoint split over several files, with an odd vocab (uneven shards)."""
+    import torch
+    from transformers import AutoModelForCausalLM, Qwen2Config
+
+    cfg = Qwen2Config(
+        vocab_size=515,
+        hidden_size=64,
+        intermediate_size=128,
+        num_hidden_layers=2,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        max_position_embeddings=128,
+        tie_word_embeddings=tied,
+    )
+    torch.manual_seed(1)
+    model = AutoModelForCausalLM.from_config(cfg).to(torch.bfloat16)
+    model.save_pretrained(path, max_shard_size="100KB")
+    assert (path / "model.safetensors.index.json").exists()
+    return path
+
+
+@pytest.mark.parametrize("tied", [True, False], ids=["tied", "untied"])
+def test_fsdp2_sharded_load_matches_full_load(tmp_path, tokens, tied):
+    ckpt_dir = save_tiny_checkpoint(tmp_path / "model", tied)
+    common = ("backend=fsdp2", "init=pretrained", f"model={ckpt_dir}", "steps=4")
+    full = run(tmp_path, tokens, "full", *common, "sharded_load=false", nproc=2)
+    sharded = run(tmp_path, tokens, "sharded", *common, "sharded_load=true", nproc=2)
+    assert sharded["summary"]["sharded_load"] and not full["summary"]["sharded_load"]
+    assert sharded["metrics"]["loss"] == full["metrics"]["loss"]
+    assert sharded["metrics"]["grad_norm"] == full["metrics"]["grad_norm"]
+
+
+@pytest.mark.parametrize("backend", ["ddp", "fsdp2"])
+def test_accum_sync_every_matches_last(tmp_path, tokens, backend):
+    last = run(tmp_path, tokens, "last", f"backend={backend}", "accum_sync=last", nproc=2)
+    every = run(tmp_path, tokens, "every", f"backend={backend}", "accum_sync=every", nproc=2)
+    assert every["summary"]["accum_steps"] == 2
+    np.testing.assert_allclose(every["metrics"]["loss"], last["metrics"]["loss"], rtol=1e-6)
+
+
+def test_oom_writes_a_record_and_stops_every_rank(tmp_path, tokens):
+    run(tmp_path, tokens, "oom", "oom_at_step=3", nproc=2, expect_rc=1)
+    (rec,) = [json.loads(p.read_text()) for p in (tmp_path / "res" / "train").glob("*.json")]
+    s = rec["summary"]
+    assert s["status"] == "oom" and s["phase"] == "step:3" and s["rank"] == 0
+    assert rec["run_id"].endswith("-rank0") and s["predicted_gib"]["total"] > 0
+
+
+def test_step_split_and_profiler_window(tmp_path, tokens):
+    r = run(tmp_path, tokens, "prof", "profile_steps=2", "profile_start=2")
+    s = r["summary"]
+    assert s["profiled_steps"] == [2, 3]
+    assert s["timed_steps"] == 4  # 8 steps - 3 warmup - 2 profiled
+    assert min(s["fwd_s_median"], s["bwd_s_median"], s["opt_s_median"]) > 0
+    assert s["fwd_s_median"] + s["bwd_s_median"] + s["opt_s_median"] <= s["step_time_s_median"] * 1.05
+    assert s["comm_by_rank"] == [{"exposed_comm_s": 0.0, "comm_s": 0.0, "compute_s": 0.0}]  # CPU: no kernels
+    assert len(r["metrics"]["fwd_s"]) == 8

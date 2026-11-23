@@ -72,6 +72,21 @@ class ModelShape:
         return self.n_layers * per_layer + embed + lm_head + self.hidden
 
 
+def _qwen25(layers: int, hidden: int, inter: int, heads: int, kv: int, vocab: int, tied: bool) -> ModelShape:
+    return ModelShape(layers, hidden, inter, heads, kv, hidden // heads, vocab, tied)
+
+
+# Shapes from the pinned Hugging Face configs (dlt.train.config.PINNED, docs/phase0.md).
+QWEN25 = {
+    "Qwen/Qwen2.5-0.5B": _qwen25(24, 896, 4864, 14, 2, 151936, True),
+    "Qwen/Qwen2.5-1.5B": _qwen25(28, 1536, 8960, 12, 2, 151936, True),
+    "Qwen/Qwen2.5-3B": _qwen25(36, 2048, 11008, 16, 2, 151936, True),
+    "Qwen/Qwen2.5-7B": _qwen25(28, 3584, 18944, 28, 4, 152064, False),
+    "Qwen/Qwen2.5-14B": _qwen25(48, 5120, 13824, 40, 8, 152064, False),
+    "Qwen/Qwen2.5-72B": _qwen25(80, 8192, 29568, 64, 8, 152064, False),
+}
+
+
 def train_flops_per_token(
     shape: ModelShape, seq_len: int, mode: str = "full", recompute: bool = False
 ) -> float:

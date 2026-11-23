@@ -28,6 +28,7 @@ class TrainConfig:
     backend: str = "ddp"  # single | ddp | fsdp2
     attn: str = "sdpa"  # sdpa | eager (eager is deterministic)
     activation_checkpointing: bool = False
+    sharded_load: bool = True  # FSDP2 + pretrained: meta init, each rank reads only its shard
     # data
     data: str = ""  # train.bin (flat uint32 tokens)
     seq_len: int = 2048
@@ -44,6 +45,7 @@ class TrainConfig:
     weight_decay: float = 0.1
     betas: list[float] = field(default_factory=lambda: [0.9, 0.95])
     grad_clip: float = 1.0
+    accum_sync: str = "last"  # last: sync gradients on the last micro-batch only | every: each micro-batch
     deterministic: bool = False
     # checkpointing
     ckpt_dir: str = ""  # empty: no checkpoints
@@ -56,7 +58,13 @@ class TrainConfig:
     stop_at_step: int = -1  # behave as if SIGUSR1 arrived before this step
     crash_at_step: int = -1  # SIGKILL every rank before this step (simulated node failure)
     crash_in_save: bool = False  # SIGKILL after the checkpoint is written but before it is published
+    oom_at_step: int = -1  # raise OutOfMemoryError on rank 0 before this step (tests the OOM record)
     write_record: bool = True
+    # measurement
+    timing_warmup: int = 3  # leading steps excluded from timing
+    profile_steps: int = 0  # >0: profile this many steps for compute / exposed communication
+    profile_start: int = 5  # first profiled step, counted from the run's first step
+    profile_dir: str = ""  # keep the chrome traces here (default: analyzed, then deleted)
 
     def resolved_revision(self) -> str | None:
         return self.revision or PINNED.get(self.model)
@@ -68,6 +76,8 @@ class TrainConfig:
             raise ValueError("init must be pretrained, random or tiny")
         if not self.data:
             raise ValueError("data (path to train.bin) is required")
+        if self.accum_sync not in ("last", "every"):
+            raise ValueError("accum_sync must be last or every")
         if self.eval_samples < 0 or (self.eval_samples and not self.val_data):
             raise ValueError("eval_samples needs val_data and must be >= 0")
 
