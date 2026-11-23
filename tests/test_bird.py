@@ -95,6 +95,8 @@ def test_split_by_database_is_whole_databases_and_deterministic():
     assert not train & val and train | val == {f"db{i}" for i in range(10)}
     assert sum(q["db_id"] in val for q in qs) >= 80
     assert data.split_by_database(qs, 0.08) == (train, val)
+    t2, v2 = data.split_by_database(qs, 0.08, eligible={"db1", "db2", "db3"}, min_databases=2)
+    assert v2 <= {"db1", "db2", "db3"} and len(v2) >= 2
 
 
 def test_prompt_and_extract():

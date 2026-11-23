@@ -14,6 +14,7 @@ read-only.
 from __future__ import annotations
 
 import multiprocessing as mp
+import os
 import random
 import sqlite3
 import time
@@ -33,11 +34,31 @@ class Result:
     seconds: float = 0.0
 
 
+def local_copies(dbs: dict[str, Path], root: str | Path | None = None) -> dict[str, Path]:
+    """Copy databases to node-local disk ($TMPDIR, else /tmp) and return the new paths. Queries against
+    the shared /scratch (VAST NFS) copies stalled on file locking during preparation; local copies
+    opened with ``immutable=1`` take no locks at all."""
+    import shutil
+
+    base = Path(root or os.environ.get("TMPDIR") or "/tmp") / f"dlt-bird-{os.getuid()}"
+    base.mkdir(parents=True, exist_ok=True)
+    out = {}
+    for key, src in dbs.items():
+        dst = base / Path(src).name
+        if not dst.exists() or dst.stat().st_size != Path(src).stat().st_size:
+            tmp = dst.with_suffix(f".tmp{os.getpid()}")
+            shutil.copy2(src, tmp)
+            tmp.replace(dst)
+        out[key] = dst
+    return out
+
+
 def run_sql(db: str | Path, sql: str, timeout: float = DEFAULT_TIMEOUT_S) -> Result:
     t0 = time.monotonic()
     deadline = t0 + timeout
     try:
-        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+        # immutable: the databases never change, so SQLite takes no file locks (read-only still enforced)
+        con = sqlite3.connect(f"file:{db}?mode=ro&immutable=1", uri=True)
         con.set_progress_handler(lambda: 1 if time.monotonic() > deadline else 0, 10_000)
         try:
             cur = con.execute(sql)

@@ -53,6 +53,7 @@ DEV_1106 = {
     "file": "data/dev_20251106-00000-of-00001.json",
 }
 VAL_FRACTION = 0.08  # of BIRD train questions, in whole databases
+VAL_MAX_SCHEMA_TOKENS = 2500  # dev schemas are at most ~1,900 tokens; a few train schemas reach 5,000
 SAMPLE_ROWS = 3
 TOKENIZER = ("Qwen/Qwen2.5-0.5B", "060db6499f32faf8b98477b0a26969ef7d8b9987")  # same vocabulary as 72B
 
@@ -186,16 +187,23 @@ def load_dev_1106(cache: Path) -> list[dict]:
     ]
 
 
-def split_by_database(questions: list[dict], fraction: float, seed: int = 0) -> tuple[set[str], set[str]]:
-    """Whole databases to val until it holds ``fraction`` of the questions; the rest train."""
+def split_by_database(
+    questions: list[dict],
+    fraction: float,
+    seed: int = 0,
+    eligible: set[str] | None = None,
+    min_databases: int = 1,
+) -> tuple[set[str], set[str]]:
+    """Whole databases to val (drawn from ``eligible``, in a seeded order) until it holds ``fraction``
+    of the questions and at least ``min_databases`` databases; the rest train."""
     counts: dict[str, int] = {}
     for q in questions:
         counts[q["db_id"]] = counts.get(q["db_id"], 0) + 1
-    dbs = sorted(counts)
+    dbs = sorted(db for db in counts if eligible is None or db in eligible)
     random.Random(seed).shuffle(dbs)
     val, n = set(), 0
     for db in dbs:
-        if n >= fraction * len(questions):
+        if n >= fraction * len(questions) and len(val) >= min_databases:
             break
         val.add(db)
         n += counts[db]
@@ -255,6 +263,8 @@ def main(argv: list[str] | None = None) -> int:
                 shutil.copy2(p, dst)
     dbs = {db_id: db_dir / f"{db_id}.sqlite" for db_id in dbs}
 
+    # queries run against node-local copies: on the shared /scratch copies they stalled on NFS locks
+    local = execute.local_copies(dbs)
     train_all = load_train_questions(raw / "train")
     dev = load_dev_1106(out / "hf")
     missing = sorted({q["db_id"] for q in train_all + dev} - set(dbs))
@@ -262,22 +272,34 @@ def main(argv: list[str] | None = None) -> int:
         raise RuntimeError(f"databases missing for {missing}")
 
     t0 = time.time()
-    train_res = check_golds(train_all, dbs, args.workers)
-    dev_res = check_golds(dev, dbs, args.workers)
+    train_res = check_golds(train_all, local, args.workers)
+    dev_res = check_golds(dev, local, args.workers)
     gold_s = time.time() - t0
-    keep = [q for q, r in zip(train_all, train_res, strict=True) if r.ok]
+    # a gold that errors is broken SQL and is dropped; one that is merely slow is kept (training needs
+    # valid SQL, not fast SQL, and dropping slow queries would skew training away from hard ones)
+    broken = [not r.ok and not (r.error or "").startswith("timeout") for r in train_res]
+    keep = [q for q, b in zip(train_all, broken, strict=True) if not b]
     dropped = [
         {"question_id": q["question_id"], "db_id": q["db_id"], "error": r.error}
-        for q, r in zip(train_all, train_res, strict=True)
-        if not r.ok
+        for q, r, b in zip(train_all, train_res, broken, strict=True)
+        if b
     ]
+    slow_kept = sum(not r.ok and not b for r, b in zip(train_res, broken, strict=True))
     dev_failed = [
         {"question_id": q["question_id"], "db_id": q["db_id"], "error": r.error}
         for q, r in zip(dev, dev_res, strict=True)
         if not r.ok
     ]
 
-    train_db_ids, val_db_ids = split_by_database(keep, VAL_FRACTION)
+    from transformers import AutoTokenizer
+
+    tok = AutoTokenizer.from_pretrained(TOKENIZER[0], revision=TOKENIZER[1])
+    train_db_list = sorted({q["db_id"] for q in keep})
+    schemas = {db_id: schema_texts(dbs[db_id]) for db_id in sorted(set(train_db_list) | set(dev_dbs))}
+    schema_tokens = {db_id: len(tok(s["ddl"]).input_ids) for db_id, s in schemas.items()}
+    # val stands in for dev during model selection, so its databases have dev-sized schemas
+    eligible = {db for db in train_db_list if schema_tokens[db] <= VAL_MAX_SCHEMA_TOKENS}
+    train_db_ids, val_db_ids = split_by_database(keep, VAL_FRACTION, eligible=eligible, min_databases=6)
     splits = {
         "train": [{**q, "split": "train"} for q in keep if q["db_id"] in train_db_ids],
         "val": [{**q, "split": "val"} for q in keep if q["db_id"] in val_db_ids],
@@ -289,23 +311,22 @@ def main(argv: list[str] | None = None) -> int:
                 f.write(json.dumps(r) + "\n")
 
     needed = sorted({q["db_id"] for rows in splits.values() for q in rows})
-    schemas = {db_id: schema_texts(dbs[db_id]) for db_id in needed}
+    schemas = {db_id: schemas[db_id] for db_id in needed}
     (out / "schemas.json").write_text(json.dumps(schemas, indent=1))
-
-    from transformers import AutoTokenizer
-
-    tok = AutoTokenizer.from_pretrained(TOKENIZER[0], revision=TOKENIZER[1])
     manifest = {
         "sources": sources,
         "dev_1106": DEV_1106,
         "counts": {
             "train_questions_in_zip": len(train_all),
             "train_gold_failed_dropped": len(dropped),
+            "train_gold_slow_kept": slow_kept,
             **{name: len(rows) for name, rows in splits.items()},
             "dev_gold_failed": len(dev_failed),
             "databases": {"train": len(train_db_ids), "val": len(val_db_ids), "dev": len(dev_dbs)},
         },
         "val_databases": sorted(val_db_ids),
+        "val_max_schema_tokens": VAL_MAX_SCHEMA_TOKENS,
+        "schema_tokens": schema_tokens,
         "gold_check_seconds": round(gold_s, 1),
         "dropped_train": dropped,
         "dev_gold_failed": dev_failed,

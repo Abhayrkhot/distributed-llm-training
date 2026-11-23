@@ -155,7 +155,7 @@ def main(argv: list[str] | None = None) -> int:
 
     rows = load_split(args.data, args.split, args.n)
     schemas = json.loads((args.data / "schemas.json").read_text())
-    dbs = {r["db_id"]: args.data / "databases" / f"{r['db_id']}.sqlite" for r in rows}
+    dbs = execute.local_copies({r["db_id"]: args.data / "databases" / f"{r['db_id']}.sqlite" for r in rows})
     name = args.name or f"{args.mode}-{args.split}"
     t0 = time.time()
     model_id, new_tokens, load_s, gen_s = None, 0, 0.0, 0.0
