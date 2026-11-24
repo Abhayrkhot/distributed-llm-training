@@ -279,14 +279,26 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--dry-run", action="store_true", help="print the plan and predicted memory")
     ap.add_argument("--serial", action="store_true", help="never run two 1-GPU runs at once")
     ap.add_argument("--retry-failed", action="store_true")
+    ap.add_argument(
+        "--only",
+        action="append",
+        default=[],
+        metavar="ENTRY",
+        help="run only these entries (repeatable); the others are skipped, so one sweep file can be "
+        "split across jobs with different resource requests",
+    )
     args = ap.parse_args(argv)
     spec = load_spec(args.spec)
     runs = plan(spec)
+    if unknown := set(args.only) - {r.entry for r in runs}:
+        ap.error(f"unknown entries: {sorted(unknown)}")
     results = Path(os.environ.get("DLT_RESULTS", "results/local"))
     done = finished_runs(results, args.retry_failed)
     for r in runs:
         if r.name in done:
             r.status = f"done:{done[r.name]}"
+        elif args.only and r.entry not in args.only:
+            r.status = "skipped"
     for r in runs:
         pred = predicted_gib(r)
         ptxt = f"{pred:7.1f}" if pred else "      -"

@@ -81,3 +81,30 @@ def test_sweep_pairs_records_failures_and_resumes(tmp_path):
     second = sweep()  # everything is finished (failures are results): nothing runs again
     assert "sweep: start" not in second
     assert len(list((tmp_path / "res" / "train").glob("*.json"))) == n_before
+
+
+def test_sweep_only_skips_other_entries(tmp_path):
+    spec = {
+        "name": "t",
+        "base": {"init": "tiny", "steps": 2},
+        "runs": [{"name": "a", "gpus": 1}, {"name": "b", "gpus": 2}, {"name": "c", "gpus": 1}],
+    }
+    path = tmp_path / "sweep.yaml"
+    path.write_text(yaml.safe_dump(spec))
+    env = {**os.environ, "DLT_RESULTS": str(tmp_path / "res"), "PYTHONPATH": str(ROOT / "src")}
+
+    def dry(*extra):
+        return subprocess.run(
+            [sys.executable, "-m", "dlt.sweep", str(path), "--dry-run", *extra],
+            cwd=ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+
+    out = dry("--only", "a", "--only", "c")
+    assert out.returncode == 0, out.stderr
+    status = {line.split()[-1]: line.split()[0] for line in out.stdout.splitlines() if line.strip()}
+    assert status == {"t.a.r0": "pending", "t.b.r0": "skipped", "t.c.r0": "pending"}
+    assert dry("--only", "nope").returncode != 0

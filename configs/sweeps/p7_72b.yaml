@@ -4,7 +4,10 @@
 #   replicated  each rank holds the whole saved NF4 base (~38 GiB); DDP all-reduces the adapter gradients
 #   sharded     FSDP1 over an NF4 base stored as BF16 (quantized while loading the BF16 checkpoint), the
 #               documented FSDP-QLoRA setup: each rank holds half the base
-#   sbatch --mem=300G slurm/sweep_2gpu.sbatch configs/sweeps/p7_72b.yaml
+# Submitted as two jobs, because the H200 nodes rarely have 300 GB of host memory free: the NF4 runs
+# need about 40 GB per rank, the FSDP1 run reads the BF16 checkpoint and gets the large request.
+#   sbatch --mem=128G slurm/sweep_2gpu.sbatch configs/sweeps/p7_72b.yaml --only 72b-single --only 72b-ddp
+#   sbatch --mem=300G slurm/sweep_2gpu.sbatch configs/sweeps/p7_72b.yaml --only 72b-fsdp1
 name: p7
 repeats: 1
 run_timeout_s: 5400
