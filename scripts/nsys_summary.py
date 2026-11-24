@@ -4,8 +4,11 @@
 
 Exports the report to SQLite with ``nsys export``, reads every GPU kernel, and writes: time per step by
 kernel category (GEMM, attention, NCCL, cross-entropy/softmax, optimizer, other), exposed communication
-and GPU idle time (dlt.metrics.overlap, the same code as the in-process profiler), memcpy time, and the
-top kernels. The .nsys-rep and .sqlite files stay on /scratch; only the summary is committed.
+and GPU idle time (dlt.metrics.overlap, the same code as the in-process profiler), memcpy time, the
+top kernels, and where the idle time comes from: each gap with no kernel running is split at the moment
+the host called the API that launched the next kernel. The part before that call is time the GPU waited
+for the host (host-bound); the part after is launch latency or a queued kernel waiting on something else.
+The .nsys-rep and .sqlite files stay on /scratch; only the summary is committed.
 """
 
 from __future__ import annotations
@@ -48,25 +51,68 @@ def category(name: str) -> str:
     return "other"
 
 
-def kernels(db: Path) -> list[tuple[str, str, float, float]]:
-    """(short name, demangled name, start_us, end_us) for every kernel, plus memcpy seconds."""
+def kernels(db: Path) -> tuple[list[tuple[str, str, float, float]], float, list[float | None]]:
+    """(short name, demangled name, start_us, end_us) for every kernel, memcpy seconds, and the start of
+    the CUDA runtime or driver call that launched each kernel (None where the API trace has no match)."""
     con = sqlite3.connect(db)
     try:
         cols = {r[1] for r in con.execute("PRAGMA table_info(CUPTI_ACTIVITY_KIND_KERNEL)")}
         short_col = "shortName" if "shortName" in cols else "demangledName"
         long_col = "demangledName" if "demangledName" in cols else short_col
         rows = con.execute(
-            f"SELECT a.value, b.value, k.start, k.end FROM CUPTI_ACTIVITY_KIND_KERNEL k "
+            f"SELECT a.value, b.value, k.start, k.end, k.correlationId FROM CUPTI_ACTIVITY_KIND_KERNEL k "
             f"JOIN StringIds a ON k.{short_col} = a.id JOIN StringIds b ON k.{long_col} = b.id"
         ).fetchall()
         try:
             memcpy = con.execute("SELECT SUM(end - start) FROM CUPTI_ACTIVITY_KIND_MEMCPY").fetchone()[0] or 0
         except sqlite3.OperationalError:
             memcpy = 0
+        try:  # runtime and driver API calls share one table; correlationId ties a launch to its kernel
+            launch = dict(con.execute("SELECT correlationId, start FROM CUPTI_ACTIVITY_KIND_RUNTIME"))
+        except sqlite3.OperationalError:
+            launch = {}
     finally:
         con.close()
     # nanoseconds -> microseconds, the unit dlt.metrics.overlap takes
-    return [(a, b, s / 1e3, e / 1e3) for a, b, s, e in rows], memcpy / 1e9
+    ks = [(a, b, s / 1e3, e / 1e3) for a, b, s, e, _ in rows]
+    launched = [launch[c] / 1e3 if c in launch else None for *_, c in rows]
+    return ks, memcpy / 1e9, launched
+
+
+GAP_BUCKETS_US = (10.0, 100.0, 1000.0, 10000.0)  # idle gaps <10 us, 10-100 us, 0.1-1 ms, 1-10 ms, >=10 ms
+GAP_LABELS = ("lt_10us", "10_100us", "100us_1ms", "1_10ms", "ge_10ms")
+
+
+def idle_gaps(timeline: list[tuple[float, float, float | None]], n_steps: int = 1) -> dict:
+    """Split the GPU's idle time (no kernel on any stream) by what the GPU was waiting for.
+
+    ``timeline`` holds (start_us, end_us, launch_us) per kernel, launch_us being the start of the API call
+    that launched it. For each gap, the time from the gap's start to the next kernel's launch call is
+    host-bound: nothing was queued, the host had not asked for the next kernel yet. The rest of the gap
+    (the call itself, launch latency, a queued kernel waiting on an event or a copy) is not.
+    Returns seconds per step, and the gaps by length (count and seconds per step).
+    """
+    idle = host = 0.0
+    counts = [0] * len(GAP_LABELS)
+    secs = [0.0] * len(GAP_LABELS)
+    busy_end = None
+    for s, e, launched in sorted(timeline, key=lambda k: k[0]):
+        if busy_end is not None and s > busy_end:
+            gap = s - busy_end
+            idle += gap
+            if launched is not None:
+                host += max(0.0, min(launched, s) - busy_end)
+            b = sum(gap >= edge for edge in GAP_BUCKETS_US)
+            counts[b] += 1
+            secs[b] += gap
+        busy_end = e if busy_end is None else max(busy_end, e)
+    per = 1e6 * n_steps
+    return {
+        "idle_s": round(idle / per, 5),
+        "host_bound_idle_s": round(host / per, 5),
+        "idle_gaps_per_step": {k: round(c / n_steps, 1) for k, c in zip(GAP_LABELS, counts, strict=True)},
+        "idle_s_by_gap": {k: round(t / per, 5) for k, t in zip(GAP_LABELS, secs, strict=True)},
+    }
 
 
 def main() -> int:
@@ -95,7 +141,7 @@ def main() -> int:
         ],
         check=True,
     )
-    ks, memcpy_s = kernels(db)
+    ks, memcpy_s, launched = kernels(db)
     per_cat: dict[str, float] = defaultdict(float)
     per_kernel: dict[tuple[str, str], list[float]] = defaultdict(lambda: [0, 0.0])
     for short, long, s, e in ks:
@@ -118,6 +164,9 @@ def main() -> int:
             k: (round(v, 5) if v is not None else None)
             for k, v in comm_overlap(timeline, n_steps=args.steps).items()
         },
+        "kernels_per_step": round(len(ks) / args.steps, 1),
+        "kernels_with_launch_call": sum(x is not None for x in launched),
+        **idle_gaps([(s, e, x) for (_, _, s, e), x in zip(ks, launched, strict=True)], n_steps=args.steps),
     }
     metrics = {
         "top_kernels": [

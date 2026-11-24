@@ -1,0 +1,27 @@
+# Phase 7 under Nsight Systems: the configs/sweeps/p7_72b.yaml step (NF4 72B, LoRA r=16, 16 BIRD train
+# questions per step, activation checkpointing), stopped after the two profiled steps 12-13. Run with
+# the backend and, for FSDP1, the BF16-storage checkpoint:
+#   sbatch slurm/nsys_2gpu.sbatch p7-nsys-72b-ddp --config configs/training/p7_72b_nsys.yaml --set backend=ddp
+#   sbatch slurm/nsys_2gpu.sbatch p7-nsys-72b-fsdp1 --config configs/training/p7_72b_nsys.yaml \
+#     --set backend=fsdp1 --set 'model=${DLT_HOME}/models/qwen2.5-72b-nf4-bf16'
+# The CUDA API trace says when each kernel was launched, so scripts/nsys_summary.py can split the GPU's
+# idle time into time the host had not yet launched the next kernel and time a launched kernel waited.
+model: ${DLT_HOME}/models/qwen2.5-72b-nf4
+quant: nf4
+peft: lora
+lora_r: 16
+lora_alpha: 32
+task: sft
+data: ${DLT_HOME}/data/bird/train.jsonl
+schemas: ${DLT_HOME}/data/bird/schemas.json
+seq_len: 4096
+global_batch: 16
+micro_batch: 1
+activation_checkpointing: true
+steps: 14
+lr: 1.0e-4
+warmup_steps: 5
+weight_decay: 0.0
+timing_warmup: 3
+profile_steps: 2
+profile_start: 12
