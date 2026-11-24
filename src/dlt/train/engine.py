@@ -212,24 +212,30 @@ def adapter_audit(model, opt, shape: ModelShape, cfg: TrainConfig) -> dict:
 
 
 @torch.no_grad()
-def frozen_fingerprint(model) -> list[tuple[str, int, int]]:
+def frozen_fingerprint(model, backend: str = "single") -> list[tuple[str, int, int]]:
     """Two integer checksums over the raw bytes of every frozen tensor (computed where the tensor lives).
-    Any write to a frozen parameter changes them; used to show one optimizer step leaves the base alone."""
+    Any write to a frozen parameter changes them; used to show one optimizer step leaves the base alone.
+    Under FSDP1 the original parameters are gathered first (read-only): its flat parameters point at freed
+    storage between steps."""
+    if backend == "fsdp1":
+        from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+
+        gathered = FSDP.summon_full_params(model, writeback=False)
+    else:
+        gathered = contextlib.nullcontext()
     out, chunk = [], 1 << 26
-    for name, p in model.named_parameters():
-        if p.requires_grad:
-            continue
-        # an FSDP1 FlatParameter points at its full-size buffer while unsharded and at freed storage
-        # after the step's reshard; this rank's shard always holds the bytes it owns
-        shard = getattr(p, "_local_shard", None)
-        raw = (p if shard is None else shard).detach().contiguous().view(torch.uint8).flatten()
-        s1 = s2 = 0
-        for start in range(0, raw.numel(), chunk):  # int64 copies of 64M bytes at a time, not of the tensor
-            b = raw[start : start + chunk].to(torch.int64)
-            w = torch.arange(start, start + b.numel(), device=b.device, dtype=torch.int64) % 251 + 1
-            s1 += int(b.sum())
-            s2 += int((b * w).sum())
-        out.append((name, s1, s2))
+    with gathered:
+        for name, p in model.named_parameters():
+            if p.requires_grad:
+                continue
+            raw = p.detach().contiguous().view(torch.uint8).flatten()
+            s1 = s2 = 0
+            for start in range(0, raw.numel(), chunk):  # int64 copies of 64M bytes at a time
+                b = raw[start : start + chunk].to(torch.int64)
+                w = torch.arange(start, start + b.numel(), device=b.device, dtype=torch.int64) % 251 + 1
+                s1 += int(b.sum())
+                s2 += int((b * w).sum())
+            out.append((name, s1, s2))
     return out
 
 
@@ -549,7 +555,7 @@ def train(cfg: TrainConfig, ctx: dlt_dist.DistCtx, root: Path | None, state: dic
     load_s = time.perf_counter() - t_load
     opt, sched = make_optimizer(model, cfg, cuda)
     audit = adapter_audit(model, opt, shape, cfg) if cfg.peft else None
-    frozen_before = frozen_fingerprint(model) if cfg.peft else None
+    frozen_before = frozen_fingerprint(model, cfg.backend) if cfg.peft else None
 
     if cfg.task == "sft":
         from transformers import AutoTokenizer
@@ -734,7 +740,9 @@ def train(cfg: TrainConfig, ctx: dlt_dist.DistCtx, root: Path | None, state: dic
         losses.append(loss_sum.item())
         grad_norms.append(_grad_norm(gnorm))
         if frozen_before is not None and "frozen_unchanged_after_step" not in audit:
-            same = torch.tensor(int(frozen_fingerprint(model) == frozen_before), device=ctx.device)
+            same = torch.tensor(
+                int(frozen_fingerprint(model, cfg.backend) == frozen_before), device=ctx.device
+            )
             if ctx.distributed:  # every rank checks what it holds (under FSDP1, its shard of the base)
                 dist.all_reduce(same, op=dist.ReduceOp.MIN)
             audit["frozen_unchanged_after_step"] = bool(same.item())
