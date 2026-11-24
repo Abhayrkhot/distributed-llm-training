@@ -158,6 +158,10 @@ Median over repeats, (min-max) where there are several. Step split and exposed c
 
 ![Step time split](docs/img/p3_step_split.png)
 
+![Exposed communication by configuration](docs/img/p3_comm.png)
+
+Exposed communication is NCCL kernel time with no compute kernel running, per step, from the profiler; it includes time one rank spends waiting for the other (most of the 72B DDP figure, see [docs/phase7.md](docs/phase7.md)).
+
 ### Scaling from 1 to 2 GPUs
 
 <!-- gen:scaling -->

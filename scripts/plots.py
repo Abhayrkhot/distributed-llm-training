@@ -4,7 +4,7 @@
 
 Matplotlib is not a project dependency (changing uv.lock would force a new venv on the cluster), so
 the figures are made in an ephemeral environment. Colors: categorical slots 1-3 of the reference
-palette (blue, orange, aqua), which pass the colorblind checks for all pairs; one color per backend.
+palette (blue, orange, aqua, yellow), which pass the colorblind checks; one color per backend.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ from dlt.results import load_records  # noqa: E402
 
 OUT = ROOT / "docs" / "img"
 SURFACE, INK, MUTED, GRID = "#fcfcfb", "#0b0b0b", "#52514e", "#e4e3df"
-BACKEND = {"single": "#2a78d6", "ddp": "#eb6834", "fsdp2": "#1baf7a"}
+BACKEND = {"single": "#2a78d6", "ddp": "#eb6834", "fsdp2": "#1baf7a", "fsdp1": "#eda100"}
 SPLIT = {"forward": "#2a78d6", "backward": "#eb6834", "optimizer": "#1baf7a", "other": "#eda100"}
 
 plt.rcParams.update(
@@ -222,6 +222,50 @@ def checkpoint_plot() -> None:
     save(fig, "p8_checkpoint.png")
 
 
+def comm_plot() -> None:
+    """Exposed communication (NCCL kernel time with no compute kernel running) as a share of the step,
+    for every 2-GPU configuration that ran under the profiler: the rank with more of it (NCCL time includes
+    waiting for the other rank), median over repeats."""
+    groups = [
+        ("Phase 3 ladder", g._p3_entries("p3.")),
+        ("Phase 4 tuned", {k: v for k, v in g._p3_entries("p4c.").items() if not k.endswith("-flash")}),
+        ("Phase 7, 72B QLoRA", g._p3_entries("p7.")),
+    ]
+    rows = []
+    for title, entries in groups:
+        for e, recs in entries.items():
+            recs = [r for r in g._ok(recs) if r["summary"].get("comm_by_rank")]
+            if not recs:
+                continue
+            shares = [
+                100
+                * max(c["exposed_comm_s"] for c in r["summary"]["comm_by_rank"])
+                / r["summary"]["step_time_s_median"]
+                for r in recs
+            ]
+            rows.append((f"{e} ({title.split(',')[0]})", recs[0]["summary"]["backend"], shares))
+    if not rows:
+        return
+    rows = rows[::-1]
+    fig, ax = plt.subplots(figsize=(7.5, 0.3 * len(rows) + 1.4))
+    for i, (_name, backend, shares) in enumerate(rows):
+        m = g._med(shares)
+        ax.barh(i, m, color=BACKEND[backend], height=0.7, edgecolor=SURFACE, linewidth=2)
+        if len(shares) > 1:
+            ax.plot([min(shares), max(shares)], [i, i], color=INK, linewidth=1)
+        ax.text(max(shares) + 0.15, i, f"{m:.1f}%", va="center", color=MUTED, fontsize=8)
+    ax.set_yticks(range(len(rows)), [r[0] for r in rows])
+    ax.set_xlim(0, max(max(r[2]) for r in rows) * 1.2)
+    ax.grid(axis="y", visible=False)
+    ax.set_xlabel(
+        "exposed communication, % of the step (rank that waits longer; median and range over repeats)"
+    )
+    ax.set_title("Communication left on the critical path, 2 H200s")
+    used = [b for b in BACKEND if any(r[1] == b for r in rows)]
+    ax.legend([plt.Rectangle((0, 0), 1, 1, color=BACKEND[b]) for b in used], used, loc="lower right")
+    save(fig, "p3_comm.png")
+
+
 MODES = {
     "base": ("base, 3-shot", "#2a78d6"),
     "finetuned": ("base + QLoRA adapter", "#eb6834"),
@@ -336,6 +380,7 @@ if __name__ == "__main__":
     chain_plot("p6-main", "72B QLoRA on BIRD train across chained Slurm jobs (1 H200)", "p6_main.png", w=10)
     bird_plot()
     checkpoint_plot()
+    comm_plot()
     mfu_plot()
     memory_plot()
     split_plot()

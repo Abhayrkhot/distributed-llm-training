@@ -90,8 +90,9 @@ rank from the model shape and the config, term by term (FP32 state, gradients, D
 gathered parameters, autocast weight copies, activations from the ops in transformers' Qwen2 code,
 logits and the cross-entropy gradient). Nothing in it is fitted.
 
-Over the 54 finished runs the current version is within 1.1% median and 4.0% worst, and it called fit
-vs out-of-memory correctly for all 22 configurations, including the four probes placed at the
+Over the 72 finished runs (the 54 of the ladder sweep and the 18 FSDP2 1-GPU baselines run later) the
+current version is within 1.6% median and 4.0% worst (1.1% median on the 54 ladder runs alone), and it
+called fit vs out-of-memory correctly for all 28 configurations, including the four probes placed at the
 139.8 GiB limit (14B FSDP2 without checkpointing was predicted at 140.5 GiB and ran out of memory).
 The model was corrected twice during the phase, each time for a mechanism found in the PyTorch or
 transformers source, not by tuning a coefficient:
