@@ -369,6 +369,18 @@ Repeat of finetuned-dev in a fresh process (finetuned-dev-repro): 1534 of 1534 q
 
 ![72B QLoRA loss across the two Slurm jobs](docs/img/p6_main.png)
 
+### 72B on 2 GPUs: replicated vs sharded (Phase 7)
+
+<!-- gen:p7 -->
+Qwen2.5-72B NF4 + LoRA r=16, 16 BIRD questions per step, activation checkpointing, 20 steps, the same data order on every run. Scaling = 2-GPU tokens/s over twice the 1-GPU tokens/s. Exposed communication: NCCL kernel time with no compute kernel running, per step, from the profiler (steps 12-13). Loss difference: largest relative gap to the 1-GPU run's per-step loss.
+
+| Run | GPUs | Tokens/s | Scaling | MFU | Median step | Peak GPU allocated / reserved per rank (GiB) | Exposed comm per step, by rank | Loss vs 1 GPU |
+|---|---|---|---|---|---|---|---|---|
+| 72b-single | 1 | 891 | - | 26.9% | 28.33 s | 51.8 / 96.5 | - | - |
+| 72b-ddp | 2 | 1,735 | 97.4% | 26.2% | 15.17 s | 52.4 / 62.6, 52.6 / 68.6 | 0.53 s, 0.00 s | 1.48% |
+| 72b-fsdp1 | - | failed | - | - | - | - | - | - |
+<!-- /gen:p7 -->
+
 ## Fault tolerance (Phase 8)
 
 <!-- gen:faults -->

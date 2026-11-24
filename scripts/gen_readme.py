@@ -727,6 +727,59 @@ def qlora_section() -> str:
     return "\n".join(lines)
 
 
+def p7_section() -> str:
+    """Phase 7: the 72B QLoRA step on 1 GPU, replicated on 2 (DDP) and sharded on 2 (FSDP1)."""
+    recs = {k: v for k, v in _latest_by_name().items() if k.startswith("p7.")}
+    one = recs.get("p7.72b-single.r0")
+    if not one:
+        return "_No Phase 7 runs yet._"
+    base_tps = one["summary"]["tokens_per_s"]
+    base_loss = one["metrics"]["loss"]
+    lines = [
+        "Qwen2.5-72B NF4 + LoRA r=16, 16 BIRD questions per step, activation checkpointing, 20 steps, the "
+        "same data order on every run. Scaling = 2-GPU tokens/s over twice the 1-GPU tokens/s. Exposed "
+        "communication: NCCL kernel time with no compute kernel running, per step, from the profiler "
+        "(steps 12-13). Loss difference: largest relative gap to the 1-GPU run's per-step loss.",
+        "",
+        "| Run | GPUs | Tokens/s | Scaling | MFU | Median step | "
+        "Peak GPU allocated / reserved per rank (GiB) | Exposed comm per step, by rank | Loss vs 1 GPU |",
+        "|---|---|---|---|---|---|---|---|---|",
+    ]
+    for name in ("p7.72b-single.r0", "p7.72b-ddp.r0", "p7.72b-fsdp1.r0"):
+        r = recs.get(name)
+        if not r:
+            continue
+        s = r["summary"]
+        label = name.split(".")[1]
+        if s.get("status") != "ok":
+            lines.append(
+                f"| {label} | {s.get('world_size', '-')} | {s.get('status')} | - | - | - | - | - | - |"
+            )
+            continue
+        n = s["world_size"]
+        scaling = "-" if n == 1 else f"{100 * s['tokens_per_s'] / (n * base_tps):.1f}%"
+        mem = ", ".join(
+            f"{a:.1f} / {b:.1f}"
+            for a, b in zip(s["peak_alloc_gib_by_rank"], s["peak_reserved_gib_by_rank"], strict=True)
+        )
+        comm = (
+            ", ".join(f"{c['exposed_comm_s']:.2f} s" for c in s["comm_by_rank"])
+            if s.get("comm_by_rank")
+            else "-"
+        )
+        loss = r["metrics"]["loss"]
+        gap = (
+            "-"
+            if n == 1
+            else f"{100 * max(abs(a - b) / a for a, b in zip(base_loss, loss, strict=True)):.2f}%"
+        )
+        lines.append(
+            f"| {label} | {n} | {s['tokens_per_s']:,.0f} | {scaling} | {100 * s['mfu']:.1f}% | "
+            f"{s['step_time_s_median']:.2f} s | {mem} | {comm} | {gap} |"
+        )
+    return "\n".join(lines)
+
+
 def faults_section() -> str:
     recs = _latest_by_name()
     ref = recs.get("p8-reference")
@@ -922,6 +975,7 @@ SECTIONS = {
     "nf4": nf4_section,
     "bird": bird_section,
     "qlora": qlora_section,
+    "p7": p7_section,
     "faults": faults_section,
     "summary": summary_section,
 }
