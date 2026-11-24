@@ -660,16 +660,37 @@ def bird_section() -> str:
             f"| {name} | {mode} | {split} | {s['questions']} | {100 * s['ex']:.1f}% | "
             f"{100 * s['ex_ci95'][0]:.1f}-{100 * s['ex_ci95'][1]:.1f} | {d} |"
         )
+
+    def first(mode: str, split: str) -> dict | None:
+        rs = [
+            r
+            for (m, sp, n), r in sorted(latest.items())
+            if m == mode and sp == split and not n.endswith("-repro")
+        ]
+        return rs[0] if rs else None
+
     for split in ("val", "dev"):
-        base = [r for (m, sp, _), r in latest.items() if m == "base" and sp == split]
-        tuned = [r for (m, sp, _), r in latest.items() if m == "finetuned" and sp == split]
-        if base and tuned:
-            a, b = _correct_by_qid(base[-1]), _correct_by_qid(tuned[-1])
+        tuned = first("finetuned", split)
+        for mode, label in (("base", "base"), ("instruct", "Instruct (reference)")):
+            other = first(mode, split)
+            if not (tuned and other):
+                continue
+            a, b = _correct_by_qid(other), _correct_by_qid(tuned)
             q = sorted(set(a) & set(b))
             gain, lo, hi = paired_bootstrap_gain([bool(a[i]) for i in q], [bool(b[i]) for i in q])
             lines.append(
-                f"\nFine-tuned minus base on {split} ({len(q)} questions, paired bootstrap): "
+                f"\nFine-tuned minus {label} on {split} ({len(q)} questions, paired bootstrap): "
                 f"{100 * gain:+.1f} points, 95% CI {100 * lo:+.1f} to {100 * hi:+.1f}."
+            )
+    for (_, split, name), r in sorted(latest.items()):
+        orig = next((v for (_, sp, n), v in latest.items() if sp == split and n + "-repro" == name), None)
+        if orig:
+            a, b = _correct_by_qid(orig), _correct_by_qid(r)
+            q = sorted(set(a) & set(b))
+            same = sum(a[i] == b[i] for i in q)
+            lines.append(
+                f"\nRepeat of {orig['summary']['name']} in a fresh process ({name}): "
+                f"{same} of {len(q)} questions scored the same."
             )
     return "\n".join(lines)
 

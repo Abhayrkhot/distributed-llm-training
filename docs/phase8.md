@@ -67,10 +67,13 @@ overfit test (r=16, 8 questions per step), checkpoints every 5 steps.
   lost; the next process resumed at step 18 (load 39 s, restore 25 s) and finished at step 24.
 - **Wall-time stops** are exercised by the Phase 6 main run, which spans several 3 h jobs on purpose.
 
-For the 72B adapter, C is about 12 s per synchronous save. At M = 24 h Young's interval is 24 min (sqrt(2 x
-12 x 86,400) s), about 48 steps of the main run (about 30 s per 16-question step); the main run saves every
-25 steps (about 12.5 min), shorter than optimal, for an expected overhead of about 2.0% (1.7% at the
-optimum).
+For the r=16 adapter, C is about 12 s per synchronous save: at M = 24 h Young's interval is 24 min
+(sqrt(2 x 12 x 86,400) s). The Phase 6 main run used r=64, whose 10.5 GiB saves took a median 53 s (27-78
+s over 21 saves): Young's interval at M = 24 h is then 50 min, about 106 of its 28.5 s steps, for a 3.5%
+expected overhead. The main run saved every 25 steps (12 min, an interval set from the r=16 save time)
+and spent 7.5% of its training time in checkpoint stalls; a 100-step interval would have cut the
+stalls to 1.9% (3.5% with the expected recomputation at one failure a day). Asynchronous saves were not
+tried on the 72B adapter.
 
 ## 5. A real `scancel`
 

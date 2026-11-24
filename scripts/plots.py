@@ -173,13 +173,14 @@ def checkpoint_plot() -> None:
                     g._med([c["total_s"] for c in cs]),
                 )
             )
+    train = load_records(ROOT / "results", "train")
     for name, label in (
         ("p8-72b-final", "72B adapter r=16, sync (3.4 GiB)"),
         ("p6-main", "72B adapter r=64, sync (10.5 GiB)"),
     ):
-        r = recs.get(name)
-        if r and r["summary"]["checkpoints"]:
-            cs = r["summary"]["checkpoints"]
+        # every save of the run, across the Slurm jobs it spanned
+        cs = [c for r in train if r["summary"].get("run_name") == name for c in r["summary"]["checkpoints"]]
+        if cs:
             rows.append(
                 (
                     label,
@@ -189,7 +190,7 @@ def checkpoint_plot() -> None:
             )
     if not rows:
         return
-    fig, ax = plt.subplots(figsize=(7.5, 0.55 * len(rows) + 1.3))
+    fig, ax = plt.subplots(figsize=(7.5, 0.55 * len(rows) + 1.6))
     for i, (_label, blocked, total) in enumerate(rows[::-1]):
         ax.barh(
             i,
@@ -217,7 +218,7 @@ def checkpoint_plot() -> None:
     ax.grid(axis="y", visible=False)
     ax.set_xlabel("seconds per checkpoint (median)")
     ax.set_title("Checkpoint cost on /scratch (VAST NFS)")
-    ax.legend(loc="lower right")
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.2), ncol=2, frameon=False)
     save(fig, "p8_checkpoint.png")
 
 

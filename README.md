@@ -4,8 +4,8 @@ Distributed LLM training on Northeastern Explorer H200s: a tested DDP/FSDP2 trai
 full-parameter scaling and memory study on the Qwen2.5 size ladder, and a Qwen2.5-72B QLoRA fine-tune
 evaluated against its base model.
 
-Status: Phases 0-5 and 8 done; Phase 6 (the 72B fine-tune) training; Phase 7 (72B on 2 GPUs,
-replicated vs sharded) queued; Phase 9 (4-8 GPUs on rented hardware) later. Plan: [PLAN.md](PLAN.md).
+Status: Phases 0-6 and 8 done (the 72B QLoRA fine-tune lifts BIRD dev execution accuracy from 46.1% to
+61.3% on one H200); Phase 7 (72B on 2 GPUs, replicated vs sharded) queued; Phase 9 (4-8 GPUs on rented hardware) later. Plan: [PLAN.md](PLAN.md).
 Write-ups: [0 hardware and decisions](docs/phase0.md), [1 environment](docs/phase1.md),
 [2 engine](docs/phase2.md), [3 scaling and memory](docs/phase3.md), [4 profiling and tuning](docs/phase4.md),
 [5 72B in NF4 and BIRD data](docs/phase5.md), [6 72B QLoRA](docs/phase6.md),
@@ -20,7 +20,7 @@ Write-ups: [0 hardware and decisions](docs/phase0.md), [1 environment](docs/phas
 | Profiler-guided tuning, 7B FSDP2 on 2 H200s | +58% tokens/s, 51.6% MFU | [phase4.md](docs/phase4.md) |
 | Analytical peak-memory predictor | median error 1.6% on 72 runs, 1.6% out of sample (66 runs) | [phase3.md](docs/phase3.md) |
 | Qwen2.5-72B in NF4 vs BF16 | next-token agreement 97.8% on SQL tokens, perplexity gap +0.32% | [phase5.md](docs/phase5.md) |
-| 72B QLoRA on one H200, BIRD text-to-SQL | base 3-shot 46.1% on BIRD dev; fine-tune in progress | [phase6.md](docs/phase6.md) |
+| 72B QLoRA on one H200, BIRD text-to-SQL | 46.1% -> 61.3% execution accuracy on BIRD dev, +15.2 points (95% CI +12.8 to +17.5) | [phase6.md](docs/phase6.md) |
 | Fault tolerance | every injected failure resumes bit-exact; async checkpoints stall 1.9 s instead of 35.2 s per 18 GiB save | [phase8.md](docs/phase8.md) |
 <!-- /gen:summary -->
 
@@ -329,9 +329,22 @@ Execution accuracy (EX): the predicted SQL returns the same set of rows as the g
 | Run | Model | Split | Questions | EX | 95% CI | Simple / moderate / challenging |
 |---|---|---|---|---|---|---|
 | base-dev | base | dev | 1534 | 46.1% | 43.6-48.6 | 56.9 / 38.6 / 20.3 |
+| finetuned-dev | finetuned | dev | 1534 | 61.3% | 58.9-63.7 | 70.6 / 58.0 / 32.9 |
+| finetuned-dev-repro | finetuned | dev | 1534 | 61.3% | 58.9-63.7 | 70.6 / 58.0 / 32.9 |
 | instruct-dev | instruct | dev | 1534 | 58.9% | 56.5-61.4 | 70.2 / 53.3 / 27.7 |
 | base-val | base | val | 880 | 55.5% | 52.2-58.8 | - |
+| finetuned-val | finetuned | val | 880 | 72.0% | 69.1-75.0 | - |
 | instruct-val | instruct | val | 880 | 70.2% | 67.2-73.3 | - |
+
+Fine-tuned minus base on val (880 questions, paired bootstrap): +16.6 points, 95% CI +13.5 to +19.7.
+
+Fine-tuned minus Instruct (reference) on val (880 questions, paired bootstrap): +1.8 points, 95% CI -0.7 to +4.2.
+
+Fine-tuned minus base on dev (1534 questions, paired bootstrap): +15.2 points, 95% CI +12.8 to +17.5.
+
+Fine-tuned minus Instruct (reference) on dev (1534 questions, paired bootstrap): +2.3 points, 95% CI +0.2 to +4.5.
+
+Repeat of finetuned-dev in a fresh process (finetuned-dev-repro): 1534 of 1534 questions scored the same.
 <!-- /gen:bird -->
 
 ![BIRD execution accuracy](docs/img/p6_bird.png)
@@ -348,7 +361,11 @@ Execution accuracy (EX): the predicted SQL returns the same set of rows as the g
 | p6.r64.r0 | single x 1 | 64 | 0-40 | finished | 0.672 -> 0.110 | 0.1466 | 904 | 27.3% | 61.4 | 842.1M LoRA params, base unchanged |
 | p6.r16-len2048.r0 | single x 1 | 16 | 0-40 | finished | 0.644 -> 0.175 | 0.1537 | 836 | 24.9% | 47.6 | 210.5M LoRA params, base unchanged |
 | p6.r16-sdpa-efficient.r0 | single x 1 | 16 | 0-40 | finished | 0.673 -> 0.116 | 0.1511 | 867 | 26.2% | 51.9 | 210.5M LoRA params, base unchanged |
+| p6-main | single x 1 | 64 | 0-337 | signal | 0.672 -> 0.132 | 0.1347 | 873 | 26.3% | 61.7 | 842.1M LoRA params, base unchanged |
+| p6-main | single x 1 | 64 | 337-500 | finished | 0.130 -> 0.058 | 0.1255 | 874 | 26.3% | 61.7 | 842.1M LoRA params, base unchanged |
 <!-- /gen:qlora -->
+
+![72B QLoRA loss across the two Slurm jobs](docs/img/p6_main.png)
 
 ## Fault tolerance (Phase 8)
 

@@ -46,6 +46,12 @@ records invalidated by a bug are kept and listed in [results/invalid.json](../re
 - **FlashAttention-3**: not tried; no prebuilt wheel for the pinned torch/CUDA.
 - **Chunked cross-entropy**: costs 2-6% throughput; worth it only where memory, not compute, limits the
   micro-batch.
+- **Checkpoint interval of the 72B main run** was set from the r=16 adapter's 12 s save; the r=64
+  adapter's saves took a median 53 s, so 7.5% of the training time went to checkpoint stalls (Young's
+  optimum at one failure a day is about 106 steps, not 25). Not rerun.
+- **Allocator headroom on the 72B main run**: 61.7 GiB allocated at the peak but up to 121.6 GiB reserved,
+  from micro-batches of many different lengths. Harmless with one process per GPU; not tuned
+  (`expandable_segments` would be the first thing to try).
 - **Explorer's `multigpu` partition** (more than 2 GPUs per job) needs an application for research
   use; not pursued. Scale-out is Phase 9, on rented GPUs.
 - **Nsight Compute** is blocked for users (`ERR_NVGPUCTRPERM`); kernel-level analysis uses Nsight
