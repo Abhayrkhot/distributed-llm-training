@@ -1,13 +1,15 @@
 # Phase 7: Qwen2.5-72B QLoRA on 2 H200s, replicated vs sharded, against 1 GPU. Same data order, global
 # batch (16 BIRD train questions), LoRA r=16 and activation checkpointing everywhere, 20 steps, so the
-# per-step losses are comparable across the three. Steps 13-14 run under the profiler (exposed comm).
+# per-step losses are comparable across the three. Steps 12-13 run under the profiler (exposed comm).
 #   replicated  each rank holds the whole saved NF4 base (~38 GiB); DDP all-reduces the adapter gradients
-#   sharded     FSDP1 over an NF4 base stored as BF16 (quantized while loading the BF16 checkpoint), the
-#               documented FSDP-QLoRA setup: each rank holds half the base
-# Submitted as two jobs, because the H200 nodes rarely have 300 GB of host memory free: the NF4 runs
-# need about 40 GB per rank, the FSDP1 run reads the BF16 checkpoint and gets the large request.
-#   sbatch --mem=128G slurm/sweep_2gpu.sbatch configs/sweeps/p7_72b.yaml --only 72b-single --only 72b-ddp
-#   sbatch --mem=300G slurm/sweep_2gpu.sbatch configs/sweeps/p7_72b.yaml --only 72b-fsdp1
+#   sharded     FSDP1 over the same NF4 base with its packed weights stored as BF16 bytes (the FSDP-QLoRA
+#               setup; scripts/nf4_storage.py re-stores the saved checkpoint): each rank holds half the base
+# Quantizing the 145 GB BF16 checkpoint while loading (the first FSDP1 attempts) took about 90 GiB of
+# host memory and, on a busy /scratch, more than 90 min to read; the re-stored 38 GiB checkpoint loads
+# like the NF4 runs.
+#   sbatch slurm/sweep_2gpu.sbatch configs/sweeps/p7_72b.yaml --only 72b-single --only 72b-ddp
+#   sbatch slurm/phase7_convert.sbatch      (once)
+#   sbatch slurm/sweep_2gpu.sbatch configs/sweeps/p7_72b.yaml --only 72b-fsdp1
 name: p7
 repeats: 1
 run_timeout_s: 5400
@@ -34,4 +36,4 @@ base:
 runs:
   - {name: 72b-single, gpus: 1, set: {backend: single, profile_steps: 0}}
   - {name: 72b-ddp, gpus: 2, set: {backend: ddp}}
-  - {name: 72b-fsdp1, gpus: 2, set: {backend: fsdp1, model: Qwen/Qwen2.5-72B}}
+  - {name: 72b-fsdp1, gpus: 2, set: {backend: fsdp1, model: '${DLT_HOME}/models/qwen2.5-72b-nf4-bf16'}}
