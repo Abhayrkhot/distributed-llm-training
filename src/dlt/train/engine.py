@@ -56,7 +56,7 @@ from dlt.data.packed import GlobalOrder, PackedTokens
 from dlt.metrics.flops import ModelShape, mfu, train_flops_per_token
 from dlt.metrics.memory import GIB, predict_for_config
 from dlt.metrics.memory import VERSION as PREDICTOR_VERSION
-from dlt.metrics.overlap import comm_overlap, kernels_from_trace
+from dlt.metrics.overlap import comm_overlap, host_wait, kernels_from_events, read_trace
 from dlt.results import git_sha, new_record, write_record
 from dlt.train import checkpoint as ckpt
 from dlt.train import loading
@@ -770,7 +770,12 @@ def train(cfg: TrainConfig, ctx: dlt_dist.DistCtx, root: Path | None, state: dic
                 prof.stop()
                 trace = prof_dir / f"rank{ctx.rank}.json"
                 prof.export_chrome_trace(str(trace))
-                state["comm"] = comm_overlap(kernels_from_trace(trace), n_steps=len(profiled))
+                events = read_trace(trace)
+                state["comm"] = {
+                    **comm_overlap(kernels_from_events(events), n_steps=len(profiled)),
+                    **host_wait(events, n_steps=len(profiled)),  # needs the CUDA API events of the trace
+                }
+                del events
                 if cfg.profile_dir:
                     dst = Path(cfg.profile_dir)
                     dst.mkdir(parents=True, exist_ok=True)
@@ -829,7 +834,16 @@ def train(cfg: TrainConfig, ctx: dlt_dist.DistCtx, root: Path | None, state: dic
     ]
     by_rank = dlt_dist.gather_floats(ctx, mem)
     comm = state.get("comm")
-    comm_keys = ("exposed_comm_s", "comm_s", "compute_s", "gpu_idle_s")
+    comm_keys = (
+        "exposed_comm_s",
+        "comm_s",
+        "compute_s",
+        "gpu_idle_s",
+        "host_bound_idle_s",
+        "idle_gaps_per_step",
+        "kernels_per_step",
+        "launch_matched_frac",
+    )
     comm_by_rank = (
         dlt_dist.gather_floats(ctx, [comm[k] for k in comm_keys])
         if cfg.profile_steps and comm is not None

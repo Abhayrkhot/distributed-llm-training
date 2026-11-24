@@ -258,11 +258,12 @@ def comm_plot() -> None:
     ax.set_xlim(0, max(max(r[2]) for r in rows) * 1.2)
     ax.grid(axis="y", visible=False)
     ax.set_xlabel(
-        "exposed communication, % of the step (rank that waits longer; median and range over repeats)"
+        "exposed communication, % of the step\n(rank that waits longer; median and range over repeats)"
     )
     ax.set_title("Communication left on the critical path, 2 H200s")
     used = [b for b in BACKEND if any(r[1] == b for r in rows)]
-    ax.legend([plt.Rectangle((0, 0), 1, 1, color=BACKEND[b]) for b in used], used, loc="lower right")
+    # upper right: the top rows are the small models, whose bars are short
+    ax.legend([plt.Rectangle((0, 0), 1, 1, color=BACKEND[b]) for b in used], used, loc="upper right")
     save(fig, "p3_comm.png")
 
 

@@ -1,0 +1,33 @@
+# Phase 7, repeat of the two 2-GPU runs of configs/sweeps/p7_72b.yaml with the profiler's CUDA API events
+# kept: for each gap with no kernel running, dlt.metrics.overlap.host_wait measures how much of it came
+# before the host even launched the next kernel (the GPU waiting for the host). Same step, data order
+# and profiled steps (12-13) as p7; the run names are p7h.* so the p7 records stay as they are.
+#   sbatch slurm/sweep_2gpu.sbatch configs/sweeps/p7_host.yaml
+# Nsight Systems measures the same split (scripts/nsys_summary.py), but the FSDP1 run hung under it at
+# the first profiled step (job 12116345).
+name: p7h
+repeats: 1
+run_timeout_s: 5400
+base:
+  model: ${DLT_HOME}/models/qwen2.5-72b-nf4
+  quant: nf4
+  peft: lora
+  lora_r: 16
+  lora_alpha: 32
+  task: sft
+  data: ${DLT_HOME}/data/bird/train.jsonl
+  schemas: ${DLT_HOME}/data/bird/schemas.json
+  seq_len: 4096
+  global_batch: 16
+  micro_batch: 1
+  activation_checkpointing: true
+  steps: 20
+  lr: 1.0e-4
+  warmup_steps: 5
+  weight_decay: 0.0
+  timing_warmup: 3
+  profile_steps: 2
+  profile_start: 12
+runs:
+  - {name: 72b-ddp, gpus: 2, set: {backend: ddp}}
+  - {name: 72b-fsdp1, gpus: 2, set: {backend: fsdp1, model: '${DLT_HOME}/models/qwen2.5-72b-nf4-bf16'}}

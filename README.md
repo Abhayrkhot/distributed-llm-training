@@ -4,12 +4,14 @@ Distributed LLM training on Northeastern Explorer H200s: a tested DDP/FSDP2 trai
 full-parameter scaling and memory study on the Qwen2.5 size ladder, and a Qwen2.5-72B QLoRA fine-tune
 evaluated against its base model.
 
-Status: Phases 0-6 and 8 done (the 72B QLoRA fine-tune lifts BIRD dev execution accuracy from 46.1% to
-61.3% on one H200); Phase 7 (72B on 2 GPUs, replicated vs sharded) queued; Phase 9 (4-8 GPUs on rented hardware) later. Plan: [PLAN.md](PLAN.md).
+Status: Phases 0-8 and 10 done on 1-2 H200s (the 72B QLoRA fine-tune lifts BIRD dev execution accuracy
+from 46.1% to 61.3% on one H200); Phase 9 (4-8 GPUs) needs rented hardware. Plan: [PLAN.md](PLAN.md).
 Write-ups: [0 hardware and decisions](docs/phase0.md), [1 environment](docs/phase1.md),
 [2 engine](docs/phase2.md), [3 scaling and memory](docs/phase3.md), [4 profiling and tuning](docs/phase4.md),
 [5 72B in NF4 and BIRD data](docs/phase5.md), [6 72B QLoRA](docs/phase6.md),
-[8 fault tolerance](docs/phase8.md), [results log](docs/RESULTS_LOG.md).
+[7 72B replicated vs sharded](docs/phase7.md), [8 fault tolerance](docs/phase8.md),
+[10 report: definition of done and the records behind each claim](docs/phase10.md),
+[results log](docs/RESULTS_LOG.md).
 
 ## Results at a glance
 
@@ -21,6 +23,7 @@ Write-ups: [0 hardware and decisions](docs/phase0.md), [1 environment](docs/phas
 | Analytical peak-memory predictor | median error 1.6% on 72 runs, 1.6% out of sample (66 runs) | [phase3.md](docs/phase3.md) |
 | Qwen2.5-72B in NF4 vs BF16 | next-token agreement 97.8% on SQL tokens, perplexity gap +0.32% | [phase5.md](docs/phase5.md) |
 | 72B QLoRA on one H200, BIRD text-to-SQL | 46.1% -> 61.3% execution accuracy on BIRD dev, +15.2 points (95% CI +12.8 to +17.5) | [phase6.md](docs/phase6.md) |
+| 72B QLoRA on 2 H200s, replicated vs sharded | DDP 97.4% scaling at 52.6 GiB per GPU; FSDP1 36.6 GiB per GPU at 68.8% scaling | [phase7.md](docs/phase7.md) |
 | Fault tolerance | every injected failure resumes bit-exact; async checkpoints stall 1.9 s instead of 35.2 s per 18 GiB save | [phase8.md](docs/phase8.md) |
 <!-- /gen:summary -->
 
@@ -160,7 +163,7 @@ Median over repeats, (min-max) where there are several. Step split and exposed c
 
 ![Exposed communication by configuration](docs/img/p3_comm.png)
 
-Exposed communication is NCCL kernel time with no compute kernel running, per step, from the profiler; it includes time one rank spends waiting for the other (most of the 72B DDP figure, see [docs/phase7.md](docs/phase7.md)).
+Exposed communication is NCCL kernel time with no compute kernel running, per step, from the profiler; it includes time one rank spends waiting for the other (most of the 72B DDP figure and nearly all of the 72B FSDP1 one, see [docs/phase7.md](docs/phase7.md)).
 
 ### Scaling from 1 to 2 GPUs
 
@@ -369,7 +372,7 @@ Repeat of finetuned-dev in a fresh process (finetuned-dev-repro): 1534 of 1534 q
 | p6-main | single x 1 | 64 | 337-500 | finished | 0.130 -> 0.058 | 0.1255 | 874 | 26.3% | 61.7 | 842.1M LoRA params, base unchanged |
 | p7.72b-single.r0 | single x 1 | 16 | 0-20 | finished | 0.672 -> 0.167 | - | 891 | 26.9% | 51.8 | 210.5M LoRA params, base unchanged |
 | p7.72b-ddp.r0 | ddp x 2 | 16 | 0-20 | finished | 0.672 -> 0.165 | - | 1,735 | 26.2% | 52.4, 52.6 | 210.5M LoRA params, base unchanged |
-| p7.72b-fsdp1.r0 | fsdp1 x 2 | 16 | 0-20 | finished | 0.672 -> 0.168 | - | 1,239 | 18.7% | 61.2, 61.2 | 210.5M LoRA params, base unchanged |
+| p7.72b-fsdp1.r0 | fsdp1 x 2 | 16 | 0-20 | finished | 0.672 -> 0.164 | - | 1,226 | 18.5% | 36.4, 36.6 | 210.5M LoRA params, base unchanged |
 <!-- /gen:qlora -->
 
 ![72B QLoRA loss across the two Slurm jobs](docs/img/p6_main.png)
@@ -383,7 +386,7 @@ Qwen2.5-72B NF4 + LoRA r=16, 16 BIRD questions per step, activation checkpointin
 |---|---|---|---|---|---|---|---|---|
 | 72b-single | 1 | 891 | - | 26.9% | 28.33 s | 51.8 / 96.5 | - | - |
 | 72b-ddp | 2 | 1,735 | 97.4% | 26.2% | 15.17 s | 52.4 / 62.6, 52.6 / 68.6 | 0.53 s, 0.00 s | 1.48% |
-| 72b-fsdp1 | 2 | 1,239 | 69.5% | 18.7% | 20.10 s | 61.2 / 101.8, 61.2 / 97.2 | 7.64 s, 1.46 s | 1.74% |
+| 72b-fsdp1 | 2 | 1,226 | 68.8% | 18.5% | 20.40 s | 36.4 / 96.9, 36.6 / 99.9 | 4.76 s, 5.00 s | 1.97% |
 <!-- /gen:p7 -->
 
 ## Fault tolerance (Phase 8)

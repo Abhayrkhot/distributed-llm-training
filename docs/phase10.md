@@ -17,7 +17,7 @@ repeats.
 | At least one profiler-backed optimization with before/after numbers | done: +58% tokens/s on 7B FSDP2, +36% on 1.5B DDP | [docs/phase4.md](phase4.md); `p4*` records |
 | 72B NF4 forward pass validated against BF16 | done | [docs/phase5.md](phase5.md); [results/eval/eval-12077471-20261123T112802-p69101.json](../results/eval/eval-12077471-20261123T112802-p69101.json) |
 | 72B QLoRA run passes the frozen-base audit, spans 2+ Slurm jobs, beats the base model on held-out data with a CI; a reloaded adapter reproduces the eval | done | [docs/phase6.md](phase6.md); records listed in section 2 |
-| Replicated vs sharded 72B on 2 GPUs measured | PHASE10_P7 | [docs/phase7.md](phase7.md) |
+| Replicated vs sharded 72B on 2 GPUs measured | done | [docs/phase7.md](phase7.md); `p7.*` records |
 | Fault-tolerance table published | done | [docs/phase8.md](phase8.md); `p8-*` records |
 | README generated from results; no number without a run behind it | done | [scripts/gen_readme.py](../scripts/gen_readme.py), CI `--check` |
 
@@ -42,6 +42,7 @@ BIRD accuracy ([p6_bird.png](img/p6_bird.png)). Failures and dead ends are in
 | Profiler-guided tuning, 1.5B DDP on 2 H200s | 64,295 -> 87,692 tokens/s (+36%), 33.5% -> 45.8% MFU | `p4c.1p5b-base.r*`, `p4c.1p5b-best.r*` (job 12082452) |
 | DDP scaling 1 -> 2 H200s, 0.5B-3B | 96.7-97.3% | `p3.*-single.r*`, `p3.*-ddp.r*` (job 12073550) |
 | 72B QLoRA replicated on 2 H200s | 97.4% scaling (1,735 vs 891 tokens/s) | [DDP](../results/train/train-12100514-20261124T101736-p3213835.json), [1 GPU](../results/train/train-12100514-20261124T101107-p3102381.json) |
+| 72B QLoRA sharded on 2 H200s (FSDP1) | 36.4-36.6 GiB per GPU against 52.4-52.6 GiB replicated; 1,226 tokens/s against 1,735 (68.8% vs 97.4% scaling); loss within run-to-run noise | [FSDP1](../results/train/train-12112395-20261124T214341-p1557605.json), DDP and 1 GPU above |
 | Peak-memory predictor | median error 1.6% on 72 Phase 3 runs (worst 4.0%), 1.6% out of sample on 66 Phase 4 runs; fit vs OOM right for all 28 configurations | `p3.*` and `p4.*` records; README "Memory" section |
 | Fault tolerance | every injected failure resumes bit-exact; async checkpoint stalls 1.9 s instead of 35.2 s per 18 GiB save | [sync](../results/train/train-12082454-20261123T180838-p3754793.json), [async](../results/train/train-12082454-20261123T181151-p3761021.json), `p8-*` records |
 | NCCL on one node | all-reduce 328 GB/s bus bandwidth between 2 H200s | [record](../results/nccl_bw/nccl_bw-12066735-20261122T214613.json) |

@@ -55,33 +55,3 @@ from nsys_summary import category  # noqa: E402
 )
 def test_category(name, expected):
     assert category(name) == expected
-
-
-def test_idle_gaps_split_host_bound_from_queued():
-    from nsys_summary import idle_gaps
-
-    # kernel A runs 0-10 us; B was launched at 5 us (queued) but starts at 30: a 20 us gap, none of it
-    # host-bound. C is launched at 1,040 us, after the GPU went idle at 40: 1,000 us host-bound of a
-    # 1,050 us gap. D overlaps C entirely and adds no gap.
-    timeline = [(0.0, 10.0, 0.0), (30.0, 40.0, 5.0), (1090.0, 1100.0, 1040.0), (1091.0, 1095.0, None)]
-    out = idle_gaps(timeline, n_steps=1)
-    assert out["idle_s"] == round(1070 / 1e6, 5)
-    assert out["host_bound_idle_s"] == round(1000 / 1e6, 5)
-    assert out["idle_gaps_per_step"] == {
-        "lt_10us": 0,
-        "10_100us": 1,
-        "100us_1ms": 0,
-        "1_10ms": 1,
-        "ge_10ms": 0,
-    }
-    assert out["idle_s_by_gap"]["1_10ms"] == round(1050 / 1e6, 5)
-
-
-def test_idle_gaps_per_step_and_unordered_input():
-    from nsys_summary import idle_gaps
-
-    timeline = [(200.0, 210.0, 150.0), (0.0, 100.0, 0.0)]  # one 100 us gap, 50 us of it host-bound
-    out = idle_gaps(timeline, n_steps=2)
-    assert out["idle_s"] == round(100 / 2e6, 5)
-    assert out["host_bound_idle_s"] == round(50 / 2e6, 5)
-    assert out["idle_gaps_per_step"]["100us_1ms"] == 0.5

@@ -942,6 +942,19 @@ def summary_section() -> str:
             txt = f"base 3-shot {100 * b['ex']:.1f}% on BIRD dev; fine-tune in progress"
         rows.append(("72B QLoRA on one H200, BIRD text-to-SQL", txt, "docs/phase6.md"))
     recs = _latest_by_name()
+    one, rep, shd = (recs.get(f"p7.72b-{k}.r0") for k in ("single", "ddp", "fsdp1"))
+    if one and rep and shd and all(r["summary"].get("status") == "ok" for r in (one, rep, shd)):
+        tps = one["summary"]["tokens_per_s"]
+        mem = lambda r: max(r["summary"]["peak_alloc_gib_by_rank"])  # noqa: E731
+        rows.append(
+            (
+                "72B QLoRA on 2 H200s, replicated vs sharded",
+                f"DDP {100 * rep['summary']['tokens_per_s'] / (2 * tps):.1f}% scaling at "
+                f"{mem(rep):.1f} GiB per GPU; FSDP1 {mem(shd):.1f} GiB per GPU at "
+                f"{100 * shd['summary']['tokens_per_s'] / (2 * tps):.1f}% scaling",
+                "docs/phase7.md",
+            )
+        )
     if recs.get("p8-sync") and recs.get("p8-async"):
         blk = lambda r: _med([c.get("blocking_s", c["total_s"]) for c in r["summary"]["checkpoints"]])  # noqa: E731
         rows.append(

@@ -37,6 +37,7 @@ records invalidated by a bug are kept and listed in [results/invalid.json](../re
 | 7 | The FSDP1 rerun spent its whole 90 min run timeout loading: it quantizes while reading the 145 GB BF16 checkpoint through memory-mapped safetensors over NFS, which on a busy filesystem ran at about 17 MB/s (the same read took 6 min in the previous job), and it needs a 300 GB host-memory request that the H200 nodes rarely have free | job 12107944 was 64% through `Loading weights` when the sweep stopped it | [scripts/nf4_storage.py](../scripts/nf4_storage.py) re-stores the saved 38 GiB NF4 checkpoint with its packed weights as BF16 bytes (what FSDP1 needs to flatten a layer): converted in 152 s (job 12111554), loaded in 2.5 min with a 128 GB request, and the sharded run uses exactly the 4-bit values of the replicated runs |
 | 7 | The frozen-base fingerprint read FSDP1 FlatParameters after the first step, when their storage (the full-size buffer, and also `_local_shard`) had been freed by the reshard | jobs 12111555 and 12111943 failed right after step 0 with `storage of size 0` | under FSDP1 the fingerprint runs inside `FSDP.summon_full_params(writeback=False)`, before and after the step, and every rank's result is combined |
 | 7 | The FSDP1 frozen-base check gathers the whole base onto every rank, and that one-off allocation became the run's peak memory | job 12112017 reported 61.2 GiB per rank for a sharded run, more than the replicated 52.4 GiB | the check's peak goes into the audit (`check_peak_gib`), its cache is released and the peak statistics restart; the record is in `results/invalid.json`, rerun in job 12112395 |
+| 7 | Under Nsight Systems (CUDA API tracing on) the FSDP1 run hung at its first profiled step: rank 0 stopped issuing collectives two all-gathers before rank 1, and the NCCL watchdog ended the job after its 10 min timeout. The DDP run under the same Nsight setup completed | job 12116345 (FSDP1) failed; job 12116346 (DDP) is in `results/profile/` | not investigated; the partial FSDP1 reports are set aside, and the split of idle time into host-bound and queued is measured in-process from the PyTorch Profiler's CUDA API events instead (`dlt.metrics.overlap.host_wait`, sweep `p7h`) |
 | 8 | DCP `async_save` on the default process group deadlocked DDP: its background thread and training ran collectives on one group | the async-checkpoint CPU test hung under DDP | a dedicated gloo group for the background write |
 | 8 | A plain `scancel` lost a checkpoint interval despite the SIGTERM handler and a 600 s KillWait: Slurm signals torchrun too, and torchrun tears its workers down before an 18 GB save finishes | job 12085605 left `step_00000040.tmp`; the resume restarted at step 30 | stop jobs early with `scancel --batch --signal=USR1` (job 12085783: clean checkpoint, nothing lost) |
 
@@ -53,9 +54,12 @@ records invalidated by a bug are kept and listed in [results/invalid.json](../re
 - **Checkpoint interval of the 72B main run** was set from the r=16 adapter's 12 s save; the r=64
   adapter's saves took a median 53 s, so 7.5% of the training time went to checkpoint stalls (Young's
   optimum at one failure a day is about 106 steps, not 25). Not rerun.
-- **Allocator headroom on the 72B main run**: 61.7 GiB allocated at the peak but up to 121.6 GiB reserved,
-  from micro-batches of many different lengths. Harmless with one process per GPU; not tuned
-  (`expandable_segments` would be the first thing to try).
+- **Allocator headroom on the 72B runs**: the main run peaks at 61.7 GiB allocated but up to 121.6 GiB
+  reserved, from micro-batches of many different lengths, and the sharded Phase 7 run at 36.4-36.6 GiB
+  allocated and 96.9-99.9 GiB reserved (DDP: 52.4-52.6 and 62.6-68.6). Harmless with one process per
+  GPU, since the allocator releases its cache and retries before it reports out of memory; not tuned,
+  and no run under a memory cap shows where each setup would actually fail (`expandable_segments` would
+  be the first thing to try).
 - **Explorer's `multigpu` partition** (more than 2 GPUs per job) needs an application for research
   use; not pursued. Scale-out is Phase 9, on rented GPUs.
 - **Nsight Compute** is blocked for users (`ERR_NVGPUCTRPERM`); kernel-level analysis uses Nsight

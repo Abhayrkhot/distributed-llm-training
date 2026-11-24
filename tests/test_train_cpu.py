@@ -218,7 +218,19 @@ def test_step_split_and_profiler_window(tmp_path, tokens):
     assert s["timed_steps"] == 4  # 8 steps - 3 warmup - 2 profiled
     assert min(s["fwd_s_median"], s["bwd_s_median"], s["opt_s_median"]) > 0
     assert s["fwd_s_median"] + s["bwd_s_median"] + s["opt_s_median"] <= s["step_time_s_median"] * 1.05
-    zeros = {"exposed_comm_s": 0.0, "comm_s": 0.0, "compute_s": 0.0, "gpu_idle_s": 0.0}
+    zeros = dict.fromkeys(
+        (
+            "exposed_comm_s",
+            "comm_s",
+            "compute_s",
+            "gpu_idle_s",
+            "host_bound_idle_s",
+            "idle_gaps_per_step",
+            "kernels_per_step",
+            "launch_matched_frac",
+        ),
+        0.0,
+    )
     assert s["comm_by_rank"] == [zeros]  # CPU: no kernels
     assert len(r["metrics"]["fwd_s"]) == 8
 

@@ -12,13 +12,18 @@ directly.
 |---|---|---|---|
 | 72b-single | 1 | the whole NF4 base (38.4 GiB, the checkpoint saved in Phase 5), the adapter, its Adam state | none |
 | 72b-ddp (replicated) | 2 | the same as 1 GPU; each rank takes 8 of the 16 questions | one all-reduce of the 210.5M FP32 adapter gradients (842 MB) per step, after the last micro-batch |
-| 72b-fsdp1 (sharded) | 2 | half of the base and half of the adapter; the base is quantized to NF4 while loading the BF16 checkpoint and stored as BF16 bytes, so FSDP1 can flatten and shard it (the PEFT/bitsandbytes FSDP-QLoRA setup) | an all-gather of each decoder layer before its forward and again before its backward, and a reduce-scatter of the adapter gradients |
+| 72b-fsdp1 (sharded) | 2 | half of the base and half of the adapter and its Adam state. The base is the same NF4 checkpoint with its packed 4-bit bytes stored as BF16 ([scripts/nf4_storage.py](../scripts/nf4_storage.py)), so FSDP1 can flatten each unit into one BF16 tensor and shard it (the PEFT/bitsandbytes FSDP-QLoRA setup). PEFT's wrap policy makes 1,201 FSDP units: 80 decoder layers, 1,120 LoRA modules (`lora_A` and `lora_B` of 7 projections in 80 layers), and the root | for every micro-batch, an all-gather of each unit before its forward and again before its backward; a reduce-scatter of the adapter gradients after the last micro-batch |
 
-The NF4 runs need about 40 GB of host memory per rank and ran in one job (12100514, `--mem=128G`); the
-FSDP1 run reads the 145 GB BF16 checkpoint and ran in its own job with `--mem=300G` (the sweep runner's
-`--only` option splits a sweep file across jobs). All three ran on node d4052. Throughput is measured
-over steps 3-19, without steps 12-13 on 2 GPUs, which run under the PyTorch Profiler to measure
-communication.
+The NF4 runs need about 40 GB of host memory per rank and ran in one job (12100514, `--mem=128G`, node
+d4052). The FSDP1 entry ran in jobs of its own (the sweep runner's `--only` option runs one entry of a
+sweep file), and the sixth is the one reported. The PEFT recipe quantizes the 145 GB BF16 checkpoint while loading it, which needed a 300 GB
+host-memory request and, from a busy /scratch, did not finish loading in 90 minutes (job 12107944).
+Re-storing the saved NF4 checkpoint's packed bytes as BF16 instead (152 s on a CPU node) gives FSDP1
+exactly the 4-bit values the replicated runs use, in a file it loads like theirs. The other failures
+were in this project's audit and its frozen-base check under FSDP1, and are fixed and listed in
+[RESULTS_LOG.md](RESULTS_LOG.md). The FSDP1 numbers below are from job 12112395 (node d4053). Throughput
+is measured over steps 3-19, without steps 12-13 on 2 GPUs, which run under the PyTorch Profiler to
+measure communication.
 
 ## 2. Replicated (DDP) against 1 GPU
 

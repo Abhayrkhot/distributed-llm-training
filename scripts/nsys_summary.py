@@ -23,7 +23,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from dlt.metrics.overlap import comm_overlap  # noqa: E402
+from dlt.metrics.overlap import comm_overlap, idle_gaps  # noqa: E402
 from dlt.results import new_record, write_record  # noqa: E402
 
 # First match wins, on the lower-cased demangled name. The demangled name carries the template
@@ -77,42 +77,6 @@ def kernels(db: Path) -> tuple[list[tuple[str, str, float, float]], float, list[
     ks = [(a, b, s / 1e3, e / 1e3) for a, b, s, e, _ in rows]
     launched = [launch[c] / 1e3 if c in launch else None for *_, c in rows]
     return ks, memcpy / 1e9, launched
-
-
-GAP_BUCKETS_US = (10.0, 100.0, 1000.0, 10000.0)  # idle gaps <10 us, 10-100 us, 0.1-1 ms, 1-10 ms, >=10 ms
-GAP_LABELS = ("lt_10us", "10_100us", "100us_1ms", "1_10ms", "ge_10ms")
-
-
-def idle_gaps(timeline: list[tuple[float, float, float | None]], n_steps: int = 1) -> dict:
-    """Split the GPU's idle time (no kernel on any stream) by what the GPU was waiting for.
-
-    ``timeline`` holds (start_us, end_us, launch_us) per kernel, launch_us being the start of the API call
-    that launched it. For each gap, the time from the gap's start to the next kernel's launch call is
-    host-bound: nothing was queued, the host had not asked for the next kernel yet. The rest of the gap
-    (the call itself, launch latency, a queued kernel waiting on an event or a copy) is not.
-    Returns seconds per step, and the gaps by length (count and seconds per step).
-    """
-    idle = host = 0.0
-    counts = [0] * len(GAP_LABELS)
-    secs = [0.0] * len(GAP_LABELS)
-    busy_end = None
-    for s, e, launched in sorted(timeline, key=lambda k: k[0]):
-        if busy_end is not None and s > busy_end:
-            gap = s - busy_end
-            idle += gap
-            if launched is not None:
-                host += max(0.0, min(launched, s) - busy_end)
-            b = sum(gap >= edge for edge in GAP_BUCKETS_US)
-            counts[b] += 1
-            secs[b] += gap
-        busy_end = e if busy_end is None else max(busy_end, e)
-    per = 1e6 * n_steps
-    return {
-        "idle_s": round(idle / per, 5),
-        "host_bound_idle_s": round(host / per, 5),
-        "idle_gaps_per_step": {k: round(c / n_steps, 1) for k, c in zip(GAP_LABELS, counts, strict=True)},
-        "idle_s_by_gap": {k: round(t / per, 5) for k, t in zip(GAP_LABELS, secs, strict=True)},
-    }
 
 
 def main() -> int:
