@@ -219,7 +219,10 @@ def frozen_fingerprint(model) -> list[tuple[str, int, int]]:
     for name, p in model.named_parameters():
         if p.requires_grad:
             continue
-        raw = p.detach().contiguous().view(torch.uint8).flatten()
+        # an FSDP1 FlatParameter points at its full-size buffer while unsharded and at freed storage
+        # after the step's reshard; this rank's shard always holds the bytes it owns
+        shard = getattr(p, "_local_shard", None)
+        raw = (p if shard is None else shard).detach().contiguous().view(torch.uint8).flatten()
         s1 = s2 = 0
         for start in range(0, raw.numel(), chunk):  # int64 copies of 64M bytes at a time, not of the tensor
             b = raw[start : start + chunk].to(torch.int64)
@@ -731,7 +734,10 @@ def train(cfg: TrainConfig, ctx: dlt_dist.DistCtx, root: Path | None, state: dic
         losses.append(loss_sum.item())
         grad_norms.append(_grad_norm(gnorm))
         if frozen_before is not None and "frozen_unchanged_after_step" not in audit:
-            audit["frozen_unchanged_after_step"] = frozen_fingerprint(model) == frozen_before
+            same = torch.tensor(int(frozen_fingerprint(model) == frozen_before), device=ctx.device)
+            if ctx.distributed:  # every rank checks what it holds (under FSDP1, its shard of the base)
+                dist.all_reduce(same, op=dist.ReduceOp.MIN)
+            audit["frozen_unchanged_after_step"] = bool(same.item())
             if not audit["frozen_unchanged_after_step"]:
                 raise RuntimeError("a frozen base parameter changed during the first optimizer step")
             frozen_before = None
