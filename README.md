@@ -369,6 +369,7 @@ Repeat of finetuned-dev in a fresh process (finetuned-dev-repro): 1534 of 1534 q
 | p6-main | single x 1 | 64 | 337-500 | finished | 0.130 -> 0.058 | 0.1255 | 874 | 26.3% | 61.7 | 842.1M LoRA params, base unchanged |
 | p7.72b-single.r0 | single x 1 | 16 | 0-20 | finished | 0.672 -> 0.167 | - | 891 | 26.9% | 51.8 | 210.5M LoRA params, base unchanged |
 | p7.72b-ddp.r0 | ddp x 2 | 16 | 0-20 | finished | 0.672 -> 0.165 | - | 1,735 | 26.2% | 52.4, 52.6 | 210.5M LoRA params, base unchanged |
+| p7.72b-fsdp1.r0 | fsdp1 x 2 | 16 | 0-20 | finished | 0.672 -> 0.168 | - | 1,239 | 18.7% | 61.2, 61.2 | 210.5M LoRA params, base unchanged |
 <!-- /gen:qlora -->
 
 ![72B QLoRA loss across the two Slurm jobs](docs/img/p6_main.png)
@@ -382,7 +383,7 @@ Qwen2.5-72B NF4 + LoRA r=16, 16 BIRD questions per step, activation checkpointin
 |---|---|---|---|---|---|---|---|---|
 | 72b-single | 1 | 891 | - | 26.9% | 28.33 s | 51.8 / 96.5 | - | - |
 | 72b-ddp | 2 | 1,735 | 97.4% | 26.2% | 15.17 s | 52.4 / 62.6, 52.6 / 68.6 | 0.53 s, 0.00 s | 1.48% |
-| 72b-fsdp1 | - | failed | - | - | - | - | - | - |
+| 72b-fsdp1 | 2 | 1,239 | 69.5% | 18.7% | 20.10 s | 61.2 / 101.8, 61.2 / 97.2 | 7.64 s, 1.46 s | 1.74% |
 <!-- /gen:p7 -->
 
 ## Fault tolerance (Phase 8)

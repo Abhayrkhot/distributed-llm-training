@@ -648,6 +648,7 @@ def train(cfg: TrainConfig, ctx: dlt_dist.DistCtx, root: Path | None, state: dic
     stopped_by, t_start = None, time.time()
     if cuda:
         torch.cuda.reset_peak_memory_stats()
+    peak_before_check = reserved_before_check = 0  # bytes; set when the FSDP1 check resets the peaks
     step = start_step
     while step < cfg.steps:
         state["phase"] = f"step:{step}"
@@ -740,11 +741,19 @@ def train(cfg: TrainConfig, ctx: dlt_dist.DistCtx, root: Path | None, state: dic
         losses.append(loss_sum.item())
         grad_norms.append(_grad_norm(gnorm))
         if frozen_before is not None and "frozen_unchanged_after_step" not in audit:
+            gathers = cuda and cfg.backend == "fsdp1"  # the check gathers the whole base onto every rank
+            if gathers:
+                peak_before_check = torch.cuda.max_memory_allocated(ctx.device)
+                reserved_before_check = torch.cuda.max_memory_reserved(ctx.device)
             same = torch.tensor(
                 int(frozen_fingerprint(model, cfg.backend) == frozen_before), device=ctx.device
             )
-            if ctx.distributed:  # every rank checks what it holds (under FSDP1, its shard of the base)
+            if ctx.distributed:  # every rank's check must pass
                 dist.all_reduce(same, op=dist.ReduceOp.MIN)
+            if gathers:  # keep the check's own allocation out of the run's peak memory
+                audit["check_peak_gib"] = round(torch.cuda.max_memory_allocated(ctx.device) / GIB, 2)
+                torch.cuda.empty_cache()
+                torch.cuda.reset_peak_memory_stats(ctx.device)
             audit["frozen_unchanged_after_step"] = bool(same.item())
             if not audit["frozen_unchanged_after_step"]:
                 raise RuntimeError("a frozen base parameter changed during the first optimizer step")
@@ -813,8 +822,8 @@ def train(cfg: TrainConfig, ctx: dlt_dist.DistCtx, root: Path | None, state: dic
     fpt = train_flops_per_token(shape, round(mean_len), flop_mode)
     hfpt = train_flops_per_token(shape, round(mean_len), flop_mode, recompute=cfg.activation_checkpointing)
     mem = [
-        torch.cuda.max_memory_allocated(ctx.device) / GIB if cuda else 0.0,
-        torch.cuda.max_memory_reserved(ctx.device) / GIB if cuda else 0.0,
+        max(torch.cuda.max_memory_allocated(ctx.device), peak_before_check) / GIB if cuda else 0.0,
+        max(torch.cuda.max_memory_reserved(ctx.device), reserved_before_check) / GIB if cuda else 0.0,
         _host_rss_gib(),
         load_s,
     ]
