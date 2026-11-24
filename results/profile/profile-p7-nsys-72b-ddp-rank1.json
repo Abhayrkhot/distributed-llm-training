@@ -1,0 +1,247 @@
+{
+  "schema_version": 1,
+  "kind": "profile",
+  "run_id": "profile-p7-nsys-72b-ddp-rank1",
+  "created_at": "2026-11-24T22:21:25+00:00",
+  "git_sha": "1c7bce8",
+  "lock_hash": "64701aa313f8",
+  "slurm": {
+    "job_id": "12116346",
+    "partition": "gpu-short",
+    "nodes": "d4053",
+    "gpus_on_node": "2",
+    "cpus_on_node": "16",
+    "host": "d4053"
+  },
+  "env": {
+    "python": "3.12.16",
+    "torch": "2.14.1+cu126",
+    "transformers": "5.24.0",
+    "peft": "0.22.0",
+    "bitsandbytes": "0.50.2",
+    "accelerate": "1.16.0",
+    "nvidia-nccl-cu12": "2.29.3",
+    "cuda_runtime": "12.6",
+    "nccl_runtime": "2.29.3"
+  },
+  "hardware": {
+    "gpu_name": "NVIDIA H200",
+    "gpu_count": 2,
+    "gpu_total_bytes": 150121545728,
+    "driver": "570.86.15"
+  },
+  "config": {
+    "name": "p7-nsys-72b-ddp",
+    "rank": 1,
+    "report": "p7-nsys-72b-ddp-rank1.nsys-rep"
+  },
+  "metrics": {
+    "top_kernels": [
+      {
+        "name": "kDequantizeBlockwise",
+        "category": "other",
+        "calls": 53760,
+        "s_per_step": 2.0964
+      },
+      {
+        "name": "vectorized_elementwise_kernel",
+        "category": "elementwise",
+        "calls": 173285,
+        "s_per_step": 1.28785
+      },
+      {
+        "name": "nvjet_tst_192x192_64x4_1x2_h_bz_coopB_TNN",
+        "category": "gemm",
+        "calls": 1601,
+        "s_per_step": 0.8539
+      },
+      {
+        "name": "elementwise_kernel",
+        "category": "elementwise",
+        "calls": 83296,
+        "s_per_step": 0.76595
+      },
+      {
+        "name": "nvjet_tst_192x192_64x3_1x2_h_bz_coopB_NNN",
+        "category": "gemm",
+        "calls": 1523,
+        "s_per_step": 0.63191
+      },
+      {
+        "name": "nvjet_tst_192x192_64x4_2x1_v_bz_coopB_TNN",
+        "category": "gemm",
+        "calls": 1681,
+        "s_per_step": 0.55196
+      },
+      {
+        "name": "nvjet_tst_192x208_64x4_2x1_v_bz_coopB_TNT",
+        "category": "gemm",
+        "calls": 1682,
+        "s_per_step": 0.54774
+      },
+      {
+        "name": "flash_bwd_dq_dk_dv_loop_seqk_parallel_kernel",
+        "category": "attention",
+        "calls": 1280,
+        "s_per_step": 0.34505
+      },
+      {
+        "name": "nvjet_tst_256x152_64x4_1x2_h_bz_coopA_TNT",
+        "category": "gemm",
+        "calls": 1283,
+        "s_per_step": 0.32845
+      },
+      {
+        "name": "flash_fwd_kernel",
+        "category": "attention",
+        "calls": 2560,
+        "s_per_step": 0.27709
+      },
+      {
+        "name": "nvjet_tst_256x144_64x4_1x2_h_bz_coopA_TNT",
+        "category": "gemm",
+        "calls": 321,
+        "s_per_step": 0.26228
+      },
+      {
+        "name": "nvjet_tst_192x208_64x4_2x1_v_bz_coopB_NNT",
+        "category": "gemm",
+        "calls": 1201,
+        "s_per_step": 0.2341
+      },
+      {
+        "name": "nvjet_tst_192x176_64x4_2x1_v_bz_coopB_NNT",
+        "category": "gemm",
+        "calls": 481,
+        "s_per_step": 0.18136
+      },
+      {
+        "name": "unrolled_elementwise_kernel",
+        "category": "elementwise",
+        "calls": 25703,
+        "s_per_step": 0.17954
+      },
+      {
+        "name": "nvjet_tst_192x192_64x3_2x1_v_bz_coopB_NNN",
+        "category": "gemm",
+        "calls": 1201,
+        "s_per_step": 0.17321
+      },
+      {
+        "name": "nvjet_tst_192x176_64x4_2x1_v_bz_coopB_TNT",
+        "category": "gemm",
+        "calls": 320,
+        "s_per_step": 0.16958
+      },
+      {
+        "name": "nvjet_tst_128x304_64x3_2x1_v_bz_coopA_NNT",
+        "category": "gemm",
+        "calls": 2002,
+        "s_per_step": 0.16021
+      },
+      {
+        "name": "nvjet_tst_256x160_64x4_1x2_h_bz_coopA_NNT",
+        "category": "gemm",
+        "calls": 481,
+        "s_per_step": 0.12738
+      },
+      {
+        "name": "nvjet_tst_256x160_64x4_1x2_h_bz_coopA_TNT",
+        "category": "gemm",
+        "calls": 321,
+        "s_per_step": 0.12317
+      },
+      {
+        "name": "nvjet_tst_128x304_64x3_1x2_h_bz_coopA_TNT",
+        "category": "gemm",
+        "calls": 640,
+        "s_per_step": 0.11888
+      },
+      {
+        "name": "nvjet_tst_128x200_64x5_2x1_v_bz_coopA_NNT",
+        "category": "gemm",
+        "calls": 1922,
+        "s_per_step": 0.10973
+      },
+      {
+        "name": "nvjet_tst_128x200_64x5_2x1_v_bz_coopA_TNT",
+        "category": "gemm",
+        "calls": 1440,
+        "s_per_step": 0.10295
+      },
+      {
+        "name": "nvjet_tst_128x256_64x4_2x1_v_bz_coopA_NNN",
+        "category": "gemm",
+        "calls": 481,
+        "s_per_step": 0.10134
+      },
+      {
+        "name": "reduce_kernel",
+        "category": "reduce",
+        "calls": 10274,
+        "s_per_step": 0.10022
+      },
+      {
+        "name": "nvjet_tst_128x248_64x4_1x2_h_bz_coopA_TNT",
+        "category": "gemm",
+        "calls": 640,
+        "s_per_step": 0.0974
+      }
+    ]
+  },
+  "summary": {
+    "name": "p7-nsys-72b-ddp",
+    "rank": 1,
+    "steps": 2,
+    "kernels": 480177,
+    "kernel_s_per_step": {
+      "attention": 0.65231,
+      "cross_entropy": 0.01419,
+      "elementwise": 2.23335,
+      "foreach": 0.00051,
+      "gemm": 6.90043,
+      "grad_clip": 0.00027,
+      "nccl": 0.08084,
+      "optimizer": 0.00195,
+      "other": 2.18253,
+      "reduce": 0.10022
+    },
+    "kernel_share": {
+      "attention": 0.0536,
+      "cross_entropy": 0.0012,
+      "elementwise": 0.1836,
+      "foreach": 0.0,
+      "gemm": 0.5672,
+      "grad_clip": 0.0,
+      "nccl": 0.0066,
+      "optimizer": 0.0002,
+      "other": 0.1794,
+      "reduce": 0.0082
+    },
+    "memcpy_s_per_step": 0.19938,
+    "compute_s": 12.08577,
+    "comm_s": 0.08084,
+    "exposed_comm_s": 0.07126,
+    "overlapped_frac": 0.11852,
+    "gpu_idle_s": 0.86406,
+    "kernels_per_step": 240088.5,
+    "kernels_with_launch_call": 480177,
+    "idle_s": 0.86406,
+    "host_bound_idle_s": 0.23971,
+    "idle_gaps_per_step": {
+      "lt_10us": 232404.0,
+      "10_100us": 7329.0,
+      "100us_1ms": 158.5,
+      "1_10ms": 15.5,
+      "ge_10ms": 2.0
+    },
+    "idle_s_by_gap": {
+      "lt_10us": 0.41467,
+      "10_100us": 0.21034,
+      "100us_1ms": 0.02795,
+      "1_10ms": 0.03687,
+      "ge_10ms": 0.17424
+    }
+  },
+  "notes": ""
+}

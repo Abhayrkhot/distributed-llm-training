@@ -63,8 +63,78 @@ measure communication.
 
 ## 3. Sharded (FSDP1) against replicated
 
-PHASE7_FSDP1
+| | DDP, 2 GPUs | FSDP1, 2 GPUs |
+|---|---|---|
+| Tokens/s | 1,735 (97.4% scaling) | 1,226 (68.8% scaling) |
+| MFU (QLoRA convention) | 26.2% | 18.5% |
+| Median step (forward + backward) | 15.17 s (4.53 + 10.27 s) | 20.40 s (7.61 + 12.86 s) |
+| Peak GPU memory allocated per rank | 52.4 GiB, 52.6 GiB | 36.4 GiB, 36.6 GiB |
+| Peak GPU memory reserved per rank | 62.6 GiB, 68.6 GiB | 96.9 GiB, 99.9 GiB |
+| Loss vs 1 GPU: step 0 / largest gap / median gap | 6e-8 / 1.48% / 0.51% | 6e-8 / 1.97% / 0.38% |
+| Model load | 16.8 s | 275 s with the files not in the node's page cache, 23 s with them |
+
+The profiler figures below come from a repeat of both 2-GPU runs in one job (sweep `p7h`, job 12118523,
+[configs/sweeps/p7_host.yaml](../configs/sweeps/p7_host.yaml)), which also records when each kernel's
+launch call was made (`dlt.metrics.overlap.host_wait`; every kernel in both traces matched its launch
+call). The repeats reproduce the throughput: 1,738 tokens/s for DDP and 1,232 for FSDP1.
+
+| Profiled steps 12-13, per step, rank 0 / rank 1 | DDP | FSDP1 |
+|---|---|---|
+| Compute kernel time | 11.21 s / 12.19 s | 10.95 s / 13.14 s |
+| NCCL kernel time (exposed: no compute running) | 3.03 s (1.04 s) / 0.01 s (0.00 s) | 5.15 s (3.02 s) / 11.93 s (6.19 s) |
+| GPU idle: no kernel running | 0.78 s / 0.84 s | 7.48 s / 2.13 s |
+| ... of which before the host had launched the next kernel | 0.23 s / 0.21 s | 6.49 s / 1.67 s |
+| Kernels launched | 240,009 / 240,089 | 270,842 / 270,922 |
+
+- **Sharding saves 16.0 GiB per GPU (30%), not half.** Each rank holds 19.2 GiB of the 38.4 GiB base
+  instead of all of it, plus half of the adapter and its Adam state. Two things stay whole. FSDP1 does
+  not free the root unit between each micro-batch's forward and its backward (`_post_forward_reshard` in
+  torch 2.14 skips the root), and here the root holds the embeddings and the output head, 4.6 GiB in
+  BF16. And the activations, about 10 GiB per rank with checkpointing (51.8 GiB on one GPU less the
+  38.4 GiB base and 3.1 GiB of adapter weights, gradients and Adam state), are not sharded at all. From
+  sizes rather than a per-buffer measurement: 52.4 less 19.2 GiB of base and 1.2 GiB of adapter state,
+  plus 4.6 GiB of root, is 36.6 GiB, against 36.4-36.6 GiB measured.
+- **Reserved memory goes up, not down**: 96.9-99.9 GiB against 62.6-68.6 GiB for DDP, about what one
+  GPU reserves (96.5 GiB). PyTorch's allocator releases its cache and retries before it reports out of
+  memory, so the allocated peak is the number that has to fit, but no run here is under a memory cap;
+  this is an open question in [RESULTS_LOG.md](RESULTS_LOG.md).
+- **FSDP1 is slower because the GPUs wait for the CPU, not for the network.** Compute is the same as
+  DDP's (10.95-13.14 s per profiled step against 11.21-12.19 s). What FSDP1 adds is 8.3-10.5 s per step
+  per rank with no compute kernel running, against 0.8-1.8 s for DDP. The transfers account for little
+  of it: per micro-batch FSDP1 gathers each decoder layer twice (0.45 GB, about 0.9 ms at the
+  all-gather bandwidth measured in Phase 1), the root once (5.0 GB, 9 ms), and each of the 1,120 LoRA
+  units twice (0.07-1.9 MB each, about 25 us apiece, the all-gather's latency floor), 0.21 s per
+  micro-batch or about 1.7 s per step. Most of the rest is host-bound: on rank 0, 6.49 s of its 7.48 s of
+  idle GPU time per step passed before the host had even called the API that launched the next kernel,
+  and rank 1 spent about the same time (6.19 s of exposed NCCL time) in all-gather kernels that had
+  started and were waiting for rank 0 to join. With DDP the host-bound part is 0.21-0.23 s per step.
+- **The host time is in FSDP1's bookkeeping, not in kernel launches.** FSDP1 launches only 13% more
+  kernels per step than DDP (270.8k against 240.0k). What it adds on the host is the work around them:
+  hooks that run before and after each of the 1,201 units, twice per micro-batch, 19,216 unit passes per
+  step. Spread evenly, 6.5 s is about 0.34 ms per pass. The traces record GPU kernels and CUDA API calls,
+  not Python, so which part of that host code costs the most is not measured.
+- **Which rank falls behind changes from run to run**: rank 0 in job 12118523 (7.5 s idle), rank 1 in
+  job 12112017 (7.7 s idle), both partly in job 12112395 (5.8 s and 3.9 s). The step lasts as long as the
+  slower host either way, and the three FSDP1 runs agree on throughput within 1.1% (1,226, 1,232 and
+  1,239 tokens/s). Why one host lags is not investigated.
+- **The loss matches to run-to-run noise.** Step 0 agrees with one GPU to 6e-8, as for DDP. After that
+  the largest gap is 1.97% (median 0.38%), and two FSDP1 runs of the same configuration (jobs 12112017 and
+  12112395) differ from each other by up to 2.27%.
+- **Start-up:** each rank reads the whole 39 GB checkpoint (39.6 GiB of host memory per rank) and FSDP1
+  shards it on the GPU afterwards. From /scratch that took 275 s; on a node that had just read the files
+  it took 23 s, as for DDP.
 
 ## 4. Which to use
 
-PHASE7_CHOICE
+- **Replicate when the base fits on one GPU.** The NF4 72B does: a DDP rank needs 52.4 GiB of a 140 GiB
+  H200. Replication gives 42% more tokens/s than sharding (1,735 against 1,226) for the same losses, and
+  needs none of the FSDP1 machinery: no BF16-storage copy of the checkpoint, no FlatParameter-aware
+  audit, no `summon_full_params` to check the frozen base.
+- **Shard when a replica does not fit, or when the memory is needed for something else.** A DDP rank
+  needs 52.4 GiB however many GPUs there are; the sharded base's share halves with each doubling (19.2
+  GiB on 2 GPUs here, 9.6 GiB on 4 by the same arithmetic, not measured: Phase 9). The 16 GiB per GPU that
+  sharding frees on 2 GPUs could hold longer sequences or larger micro-batches.
+- **If sharding, the cost to work on is host time per unit, not bandwidth.** Not tried here: fewer,
+  larger units (FSDP1 can put LoRA and frozen weights in one unit only with `use_orig_params=True`, which
+  its documentation advises against because of higher gradient memory), FSDP2's per-parameter sharding,
+  or CUDA graphs to take the per-unit launches off the host.

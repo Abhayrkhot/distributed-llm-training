@@ -163,7 +163,7 @@ Median over repeats, (min-max) where there are several. Step split and exposed c
 
 ![Exposed communication by configuration](docs/img/p3_comm.png)
 
-Exposed communication is NCCL kernel time with no compute kernel running, per step, from the profiler; it includes time one rank spends waiting for the other (most of the 72B DDP figure and nearly all of the 72B FSDP1 one, see [docs/phase7.md](docs/phase7.md)).
+Exposed communication is NCCL kernel time with no compute kernel running, per step, from the profiler; it includes time one rank spends waiting for the other (most of the 72B DDP and FSDP1 figures, see [docs/phase7.md](docs/phase7.md)).
 
 ### Scaling from 1 to 2 GPUs
 
@@ -311,6 +311,7 @@ Nsight Systems, rank 0, GPU kernel time per optimizer step by category (share of
 |---|---|---|---|---|---|---|---|---|---|---|
 | p4-nsys-7b-base | 2.128 (35%) | 0.276 (4%) | 1.524 (25%) | 1.344 (22%) | 0.040 (1%) | 0.558 (9%) | 0.246 (4%) | 0.025 (0%) | 0.297 | 0.156 |
 | p4-nsys-1p5b-base | 0.411 (34%) | 0.094 (8%) | 0.254 (21%) | 0.400 (33%) | 0.039 (3%) | 0.018 (1%) | 0.000 (0%) | 0.008 (1%) | 0.119 | 0.043 |
+| p7-nsys-72b-ddp | 6.380 (45%) | 0.560 (4%) | 2.915 (21%) | 2.121 (15%) | 0.013 (0%) | 0.003 (0%) | 0.000 (0%) | 2.175 (15%) | 0.913 | 0.787 |
 <!-- /gen:profile -->
 
 ## Qwen2.5-72B in NF4 (Phase 5)
@@ -373,6 +374,9 @@ Repeat of finetuned-dev in a fresh process (finetuned-dev-repro): 1534 of 1534 q
 | p7.72b-single.r0 | single x 1 | 16 | 0-20 | finished | 0.672 -> 0.167 | - | 891 | 26.9% | 51.8 | 210.5M LoRA params, base unchanged |
 | p7.72b-ddp.r0 | ddp x 2 | 16 | 0-20 | finished | 0.672 -> 0.165 | - | 1,735 | 26.2% | 52.4, 52.6 | 210.5M LoRA params, base unchanged |
 | p7.72b-fsdp1.r0 | fsdp1 x 2 | 16 | 0-20 | finished | 0.672 -> 0.164 | - | 1,226 | 18.5% | 36.4, 36.6 | 210.5M LoRA params, base unchanged |
+| p7-nsys-72b-ddp | ddp x 2 | 16 | 0-14 | finished | 0.672 -> 0.211 | - | 1,739 | 26.2% | 52.4, 52.6 | 210.5M LoRA params, base unchanged |
+| p7h.72b-ddp.r0 | ddp x 2 | 16 | 0-20 | finished | 0.672 -> 0.166 | - | 1,738 | 26.2% | 52.4, 52.6 | 210.5M LoRA params, base unchanged |
+| p7h.72b-fsdp1.r0 | fsdp1 x 2 | 16 | 0-20 | finished | 0.672 -> 0.164 | - | 1,232 | 18.6% | 36.4, 36.6 | 210.5M LoRA params, base unchanged |
 <!-- /gen:qlora -->
 
 ![72B QLoRA loss across the two Slurm jobs](docs/img/p6_main.png)

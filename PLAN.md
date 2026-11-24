@@ -320,15 +320,15 @@ After Phases 1-8 are complete on 2 H200s. Target: one rented node with 4-8 H100s
 
 ## 8. Definition of done
 
-- [ ] Resource manifest for the H200 nodes committed.
-- [ ] DDP and FSDP2 pass the loss-parity, accumulation, sampler and bit-exact resume tests on 1 and 2 H200s.
-- [ ] Scaling and memory study on 0.5B-14B covers MFU, HFU, memory, step breakdown and communication, with 3+ repeats and the predictor error.
-- [ ] At least one profiler-backed optimization with before/after numbers.
-- [ ] 72B NF4 forward pass validated against BF16.
-- [ ] 72B QLoRA run passes the frozen-base audit, spans 2+ Slurm jobs, and beats the base model on the held-out set (with a CI); a reloaded adapter reproduces the eval.
-- [ ] Replicated vs sharded 72B on 2 GPUs measured.
-- [ ] Fault-tolerance table published.
-- [ ] README generated from results; no number without a run behind it.
+- [x] Resource manifest for the H200 nodes committed.
+- [x] DDP and FSDP2 pass the loss-parity, accumulation, sampler and bit-exact resume tests on 1 and 2 H200s.
+- [x] Scaling and memory study on 0.5B-14B covers MFU, HFU, memory, step breakdown and communication, with 3+ repeats and the predictor error.
+- [x] At least one profiler-backed optimization with before/after numbers.
+- [x] 72B NF4 forward pass validated against BF16.
+- [x] 72B QLoRA run passes the frozen-base audit, spans 2+ Slurm jobs, and beats the base model on the held-out set (with a CI); a reloaded adapter reproduces the eval.
+- [x] Replicated vs sharded 72B on 2 GPUs measured.
+- [x] Fault-tolerance table published.
+- [x] README generated from results; no number without a run behind it.
 
 **Later (Phase 9):** 4- and 8-GPU results on rented GPUs; the full-parameter 72B memory experiment.
 
