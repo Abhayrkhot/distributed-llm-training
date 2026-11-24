@@ -363,6 +363,8 @@ Repeat of finetuned-dev in a fresh process (finetuned-dev-repro): 1534 of 1534 q
 | p6.r16-sdpa-efficient.r0 | single x 1 | 16 | 0-40 | finished | 0.673 -> 0.116 | 0.1511 | 867 | 26.2% | 51.9 | 210.5M LoRA params, base unchanged |
 | p6-main | single x 1 | 64 | 0-337 | signal | 0.672 -> 0.132 | 0.1347 | 873 | 26.3% | 61.7 | 842.1M LoRA params, base unchanged |
 | p6-main | single x 1 | 64 | 337-500 | finished | 0.130 -> 0.058 | 0.1255 | 874 | 26.3% | 61.7 | 842.1M LoRA params, base unchanged |
+| p7.72b-single.r0 | single x 1 | 16 | 0-20 | finished | 0.672 -> 0.167 | - | 891 | 26.9% | 51.8 | 210.5M LoRA params, base unchanged |
+| p7.72b-ddp.r0 | ddp x 2 | 16 | 0-20 | finished | 0.672 -> 0.165 | - | 1,735 | 26.2% | 52.4, 52.6 | 210.5M LoRA params, base unchanged |
 <!-- /gen:qlora -->
 
 ![72B QLoRA loss across the two Slurm jobs](docs/img/p6_main.png)

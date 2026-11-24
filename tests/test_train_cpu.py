@@ -589,3 +589,17 @@ def test_fsdp2_single_process_without_torchrun(tmp_path, tokens):
     fsdp = run(tmp_path, tokens, "fsdp2-1", "backend=fsdp2")
     assert fsdp["summary"]["world_size"] == 1
     np.testing.assert_allclose(fsdp["metrics"]["loss"], single["metrics"]["loss"], rtol=2e-3)
+
+
+def test_adapter_counts_fsdp1_flat_parameters_at_full_size():
+    """An FSDP1 FlatParameter is a shard; the audit counts the original parameters it stands for."""
+    import torch
+
+    from dlt.train.engine import _orig_count, _orig_numel
+
+    shard = torch.nn.Parameter(torch.zeros(5))  # this rank's half of two tensors of 4 and 6 elements
+    shard._numels = (4, 6)
+    shard._fqns = ("a.lora_A.weight", "a.lora_B.weight")
+    assert (_orig_numel(shard), _orig_count(shard)) == (10, 2)
+    plain = torch.nn.Parameter(torch.zeros(3, 2))
+    assert (_orig_numel(plain), _orig_count(plain)) == (6, 1)

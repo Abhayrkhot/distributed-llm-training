@@ -173,18 +173,31 @@ def expected_lora_params(shape: ModelShape, cfg: TrainConfig) -> int:
     return shape.n_layers * sum(cfg.lora_r * sum(dims[t]) for t in cfg.lora_targets)
 
 
+def _orig_numel(p) -> int:
+    """Parameters a tensor stands for: an FSDP1 FlatParameter is this rank's shard of several original
+    parameters (plus padding), and ``_numels`` lists their full sizes."""
+    numels = getattr(p, "_numels", None)
+    return int(sum(numels)) if numels is not None else p.numel()
+
+
+def _orig_count(p) -> int:
+    fqns = getattr(p, "_fqns", None)
+    return len(fqns) if fqns is not None else 1
+
+
 def adapter_audit(model, opt, shape: ModelShape, cfg: TrainConfig) -> dict:
     """Every trainable tensor is a LoRA tensor, the optimizer holds exactly those, and their count matches
-    the formula. Raises if any check fails; the record keeps the details."""
+    the formula. Raises if any check fails; the record keeps the details. Counts are of the original
+    (unsharded) parameters, also under FSDP1."""
     trainable = [(n, p) for n, p in model.named_parameters() if p.requires_grad]
     opt_ids = {id(p) for g in opt.param_groups for p in g["params"]}
     audit = {
-        "trainable_tensors": len(trainable),
-        "trainable_params": sum(p.numel() for _, p in trainable),
+        "trainable_tensors": sum(_orig_count(p) for _, p in trainable),
+        "trainable_params": sum(_orig_numel(p) for _, p in trainable),
         "expected_lora_params": expected_lora_params(shape, cfg),
         "all_trainable_are_lora": all("lora_" in n for n, _ in trainable),
         "optimizer_holds_only_trainable": opt_ids == {id(p) for _, p in trainable},
-        "frozen_tensors": sum(1 for _, p in model.named_parameters() if not p.requires_grad),
+        "frozen_tensors": sum(_orig_count(p) for _, p in model.named_parameters() if not p.requires_grad),
         "trainable_dtypes": sorted({str(p.dtype) for _, p in trainable}),
         "example_trainable": [n for n, _ in trainable[:4]],
     }
